@@ -18,7 +18,8 @@ import time
 import numpy as np
 from lightgbm import LGBMClassifier
 import seaborn as sns
-from joblib import dump, load
+from joblib import dump
+
 
 
 class TrainModelThread(QThread):
@@ -46,9 +47,6 @@ class TrainModelThread(QThread):
         self.result.emit(f"Model trained: {type(self.model).__name__}\nAccuracy: {accuracy:.2f}\n")
         self.plot_signal.emit(self.y_test.tolist(), predictions.tolist())
         self.progress.emit(100)
-        dump(self.model, "trained_model.pkl")
-        print("Model zapisany jako trained_model.pkl")
-
 
 class StatsPlotTab(QWidget):
     def __init__(self):
@@ -267,14 +265,6 @@ class WekaLikeApp(QMainWindow):
         self.dataset = None
         self.model = None
         self.initUI()
-
-    def loadModel(self):
-        try:
-            self.model = load("trained_model.pkl")
-            print("Model został załadowany.")
-        except FileNotFoundError:
-            print("Nie znaleziono zapisanego modelu. Przeprowadź trening.")
-
 
     def initUI(self):
         self.setWindowTitle("ML Visualisation & Statistics App")
