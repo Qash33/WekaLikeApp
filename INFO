@@ -1,0 +1,22 @@
+1.data
+	1.1 loading
+	1.2 validaiton
+	1.3 striping
+2.procesing
+	2.1 prep to train
+	2.2 turn into train datasets and test datasets
+3.training
+	3.1 neural network
+		1.1.1 kod, który przyjmie train dataset i ustali wagi dla sieci neuronowej tak, zeby na zbiorze testowym wychodzily adekwatne wyniki
+	3.2 random forest
+		1.2.1 poprosic chata, zeby napisal
+
+4.db
+	4.1 zapis neural network wag - tak, zeby nie trzeba bylo trenowac po kazdym uruchomieniu aplikacji tylko sie podaje rekord i daje cene
+	4.2 to samo dla drzewek
+5.gui
+	5.1 moduly
+		5.1.1 wykresowy czyli pokazuje faktyczne dane vs umiejetnosc predykcji wybranego modelu sztucznej inteligencji
+		5.2.1 pozwala na zparametryzowanie mieszkania i przewiduje jego cene (mfoanmfian iowrn oaibfuiofgiue)
+6.plots
+
