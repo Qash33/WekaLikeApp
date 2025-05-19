@@ -1,5 +1,5 @@
 from PyQt5.QtCore import QThread, pyqtSignal
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import mean_absolute_error, r2_score
 import time
 
 # Wątek do trenowania modelu w tle, z obsługą sygnałów dla GUI
@@ -23,8 +23,11 @@ class TrainModelThread(QThread):
 
         self.model.fit(self.X_train, self.y_train)
         predictions = self.model.predict(self.X_test)
-        accuracy = accuracy_score(self.y_test, predictions)
 
-        self.result.emit(f"Model trained: {type(self.model).__name__}\nAccuracy: {accuracy:.2f}\n")
+        mae = mean_absolute_error(self.y_test, predictions)
+        r2 = r2_score(self.y_test, predictions)
+
+        self.result.emit(f"Model trained: {type(self.model).__name__}\nMAE: {mae:.2f}\nR²: {r2:.2f}")
         self.plot_signal.emit(self.y_test.tolist(), predictions.tolist())
         self.progress.emit(100)
+

@@ -4,7 +4,12 @@ from PyQt5.QtCore import Qt
 import pandas as pd
 import numpy as np
 import seaborn as sns
+import matplotlib
+
+matplotlib.use('Agg')  # Backend nieinteraktywny
 import matplotlib.pyplot as plt
+
+import os
 
 class StatsPlotTab(QWidget):
     def __init__(self):
@@ -33,7 +38,7 @@ class StatsPlotTab(QWidget):
         layout.addWidget(self.num_combo)
 
         self.plot_type_combo = QComboBox()
-        self.plot_type_combo.addItems(["Boxplot", "Scatter Plot", "Barplot", "Histogram", "Line Chart"])
+        self.plot_type_combo.addItems(["Boxplot", "Scatter Plot", "Trend Analysis", "Correlation Heatmap"])
         layout.addWidget(QLabel("Select plot type:"))
         layout.addWidget(self.plot_type_combo)
 
@@ -55,6 +60,9 @@ class StatsPlotTab(QWidget):
             else:
                 self.dataset = pd.read_excel(file_path)
 
+            # Diagnostyka danych
+            print(self.dataset.dtypes)  # Wyświetlanie typów danych w załadowanym zbiorze
+
             numeric_cols = self.dataset.select_dtypes(include=[np.number]).columns.tolist()
             categorical_cols = self.dataset.select_dtypes(include=['object']).columns.tolist()
 
@@ -72,24 +80,51 @@ class StatsPlotTab(QWidget):
         num = self.num_combo.currentText()
         plot_type = self.plot_type_combo.currentText()
 
+        # Upewnienie się, że katalog istnieje
+        output_dir = "data/plots"
+        if not os.path.exists(output_dir):
+            try:
+                os.makedirs(output_dir)
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Cannot create directory {output_dir}: {e}")
+                return
+
         plt.figure(figsize=(10, 6))
 
-        if plot_type == "Boxplot":
-            sns.boxplot(data=self.dataset, x=cat, y=num)
-        elif plot_type == "Scatter Plot":
-            sns.scatterplot(data=self.dataset, x=cat, y=num)
-        elif plot_type == "Barplot":
-            sns.barplot(data=self.dataset, x=cat, y=num)
-        elif plot_type == "Histogram":
-            sns.histplot(data=self.dataset, x=num, hue=cat, multiple="stack")
-        elif plot_type == "Line Chart":
-            sns.lineplot(data=self.dataset, x=cat, y=num)
+        try:
+            # Generowanie wybranego wykresu
+            if plot_type == "Boxplot":
+                sns.boxplot(data=self.dataset, x=cat, y=num)
+            elif plot_type == "Scatter Plot":
+                sns.scatterplot(data=self.dataset, x=cat, y=num)
+            elif plot_type == "Correlation Heatmap":
+                correlation_matrix = self.dataset.corr(numeric_only=True)
+                sns.heatmap(correlation_matrix, annot=True, cmap="coolwarm")
+            elif plot_type == "Trend Analysis":
+                sns.lineplot(data=self.dataset, x=num, y="price", hue=cat)
 
-        plt.title(f"{plot_type} of {num} by {cat}")
-        plt.xticks(rotation=45)
-        plt.savefig("data/plots/stats_plot.png")
-        plt.close()
+            plt.title(f"{plot_type} of {num} by {cat}")
+            plt.xticks(rotation=45)
 
-        pixmap = QPixmap("data/plots/stats_plot.png")
-        self.plot_label.setPixmap(pixmap)
-        self.plot_label.setScaledContents(True)
+            # Zapis do pliku
+            plot_path = os.path.join(output_dir, "stats_plot.png")
+            plt.savefig(plot_path)
+            plt.close()
+
+            # Wyświetlenie w QLabel
+
+            try:
+                pixmap = QPixmap(os.path.join(output_dir, "stats_plot.png"))
+                self.plot_label.setPixmap(pixmap)
+                self.plot_label.setScaledContents(True)
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to load plot image: {e}")
+
+            pixmap = QPixmap(plot_path)
+            self.plot_label.setPixmap(pixmap)
+            self.plot_label.setScaledContents(True)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error while generating plot: {e}")
+
+

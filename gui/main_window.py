@@ -7,7 +7,7 @@ from model.preprocess import preprocess_data
 from model.algorithms import ALGORITHMS
 from model.model_manager import save_model
 from utils1.plot_utils import plot_results
-from PyQt5.QtWidgets import QFileDialog, QLabel, QProgressBar, QTextEdit, QScrollArea, QHBoxLayout, QMessageBox
+from PyQt5.QtWidgets import QFileDialog, QLabel, QProgressBar, QTextEdit, QScrollArea, QHBoxLayout, QMessageBox, QLabel, QLineEdit, QVBoxLayout
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap
 from sklearn.model_selection import train_test_split
@@ -100,6 +100,26 @@ class WekaLikeApp(QMainWindow):
         help_menu = menubar.addMenu("Help")
         help_menu.addAction("About", self.showAboutDialog)
 
+    def add_filter_ui(self):
+        filter_layout = QVBoxLayout()
+
+        self.city_filter = QLineEdit()
+        self.city_filter.setPlaceholderText("Filter by city...")
+        filter_layout.addWidget(QLabel("City Filter"))
+        filter_layout.addWidget(self.city_filter)
+
+        self.min_price_filter = QLineEdit()
+        self.min_price_filter.setPlaceholderText("Minimum Price...")
+        filter_layout.addWidget(QLabel("Minimum Price"))
+        filter_layout.addWidget(self.min_price_filter)
+
+        self.max_price_filter = QLineEdit()
+        self.max_price_filter.setPlaceholderText("Maximum Price...")
+        filter_layout.addWidget(QLabel("Maximum Price"))
+        filter_layout.addWidget(self.max_price_filter)
+
+        return filter_layout
+
     def showAboutDialog(self):
         QMessageBox.about(self, "ML Analyze App", "ML Analyze App\nVersion 1.0\nCreated with PyQt5 and scikit-learn.")
 
@@ -125,16 +145,24 @@ class WekaLikeApp(QMainWindow):
         self.result_text.append(f"Chart type changed to: {chart_type}")
 
     def trainModel(self):
-        X, y = preprocess_data(self.dataset)
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-        algorithm_name = self.algorithm_combo.currentText()
-        self.model = ALGORITHMS[algorithm_name]
-        self.train_thread = TrainModelThread(self.model, X_train, X_test, y_train, y_test)
-        self.train_thread.progress.connect(self.progress_bar.setValue)
-        self.train_thread.result.connect(self.result_text.append)
-        self.train_thread.plot_signal.connect(lambda y, p: plot_results(y, p, self.chart_combo, self.plot_label))
-        self.train_thread.start()
-        save_model(self.model, f"data/models/{algorithm_name}.joblib")
+        if self.dataset is None or self.dataset.empty:  # Sprawdzenie danych
+            self.result_text.append("Brak zbioru danych! Proszę załadować dane przed rozpoczęciem treningu.\n")
+            return
+        try:
+            X, y = preprocess_data(self.dataset)
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+            algorithm_name = self.algorithm_combo.currentText()
+            self.model = ALGORITHMS[algorithm_name]
+            self.train_thread = TrainModelThread(self.model, X_train, X_test, y_train, y_test)
+            self.train_thread.progress.connect(self.progress_bar.setValue)
+            self.train_thread.result.connect(self.result_text.append)
+            self.train_thread.plot_signal.connect(lambda y, p: plot_results(y, p, self.chart_combo, self.plot_label))
+            self.train_thread.start()
+            save_model(self.model, f"data/models/{algorithm_name}.joblib")
+        except ValueError as e:
+            self.result_area.setPlainText(f"Błąd przetwarzania danych: {e}")
+        except Exception as e:
+            self.result_area.setPlainText(f"Wystąpił nieoczekiwany błąd: {e}")
 
     def clearResults(self):
         self.result_text.clear()
