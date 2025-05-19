@@ -9,16 +9,26 @@ def preprocess_data(df):
     if 'id' in df.columns:
         df = df.drop(columns=['id'])
 
-    num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    cat_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+    required_columns = ['price', 'squareMeters', 'rooms', 'city', 'buildYear', 'type']
+    for col in required_columns:
+        if col not in df.columns:
+            raise ValueError(f"Kolumna {col} jest wymagana w zbiorze danych!")
 
-    df[num_cols] = SimpleImputer(strategy="mean").fit_transform(df[num_cols])
-    for col in cat_cols:
-        df[col] = LabelEncoder().fit_transform(df[col].astype(str))
+    # Kodowanie kolumn kategorycznych
+    df['city'] = LabelEncoder().fit_transform(df['city'])
+    df['type'] = LabelEncoder().fit_transform(df['type'])  # Dodano kodowanie dla 'type'
 
-    X = df.iloc[:, :-1].values
-    y = df.iloc[:, -1].values
+    # Zastąp brakujące wartości w kolumnach liczbowych
+    numeric_cols = ['squareMeters', 'rooms', 'buildYear']
+    df[numeric_cols] = SimpleImputer(strategy='mean').fit_transform(df[numeric_cols])
 
+    # Rozdzielenie na X (cechy) oraz y (ceny)
+    X = df[['squareMeters', 'rooms', 'city', 'buildYear', 'type']].values
+    y = df['price'].values
+
+    # Standaryzacja cech
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
+
     return X_scaled, y
+
