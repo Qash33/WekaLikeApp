@@ -10,7 +10,7 @@ from utils1.plot_utils import plot_results
 from PyQt5.QtWidgets import QFileDialog, QLabel, QProgressBar, QTextEdit, QScrollArea, QHBoxLayout, QMessageBox, QLabel, QLineEdit, QVBoxLayout
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, cross_val_score, KFold
 import pandas as pd
 import numpy as np
 import os
@@ -145,11 +145,22 @@ class WekaLikeApp(QMainWindow):
         self.result_text.append(f"Chart type changed to: {chart_type}")
 
     def trainModel(self):
-        if self.dataset is None or self.dataset.empty:  # Sprawdzenie danych
+        if self.dataset is None or self.dataset.empty:
             self.result_text.append("Brak zbioru danych! Proszę załadować dane przed rozpoczęciem treningu.\n")
             return
         try:
             X, y = preprocess_data(self.dataset)
+            algorithm_name = self.algorithm_combo.currentText()
+            self.model = ALGORITHMS[algorithm_name]
+
+            # === Cross-validation przed trenowaniem ===
+            cv = KFold(n_splits=5, shuffle=True, random_state=42)
+            scores = cross_val_score(self.model, X, y, cv=cv, scoring="neg_mean_absolute_error")
+            mean_mae = -scores.mean()
+            std_mae = scores.std()
+            self.result_text.append(
+                f"Cross-validation (5-fold):\nMean MAE: {mean_mae:.2f}, Std: {std_mae:.2f}\n"
+            )
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
             algorithm_name = self.algorithm_combo.currentText()
             self.model = ALGORITHMS[algorithm_name]
