@@ -14,6 +14,7 @@ from sklearn.model_selection import train_test_split, cross_val_score, KFold
 import pandas as pd
 import numpy as np
 import os
+import joblib
 
 class WekaLikeApp(QMainWindow):
     def __init__(self):
@@ -35,6 +36,9 @@ class WekaLikeApp(QMainWindow):
 
         self.ml_tab = QWidget()
         ml_layout = QVBoxLayout()
+
+        self.load_model_button = create_button("Load Pretrained Model", "#9C27B0", self.loadPretrainedModel)
+        ml_layout.addWidget(self.load_model_button)
 
         self.load_button = create_button("Load Dataset", "#4CAF50", self.loadDataset)
         ml_layout.addWidget(self.load_button)
@@ -90,6 +94,7 @@ class WekaLikeApp(QMainWindow):
 
         model_menu = menubar.addMenu("Model")
         model_menu.addAction("Train Model", self.trainModel)
+        model_menu.addAction("Load Model", self.loadPretrainedModel)
         model_menu.addAction("Clear Results", self.clearResults)
 
         viz_menu = menubar.addMenu("Visualization")
@@ -99,6 +104,19 @@ class WekaLikeApp(QMainWindow):
 
         help_menu = menubar.addMenu("Help")
         help_menu.addAction("About", self.showAboutDialog)
+
+    def loadPretrainedModel(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select model file", "", "Pickle Files (*.pkl);;All Files (*)"
+        )
+        if file_path:
+            try:
+                self.model = joblib.load(file_path)
+                self.result_text.append(f"Pretrained model loaded from: {file_path}")
+                QMessageBox.information(self, "Model loaded", "Pretrained model was loaded successfully!")
+            except Exception as e:
+                QMessageBox.critical(self, "Loading error", f"Failed to load model: {e}")
+                self.result_text.append(f"Error loading model: {e}")
 
     def add_filter_ui(self):
         filter_layout = QVBoxLayout()
