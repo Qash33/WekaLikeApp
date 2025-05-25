@@ -16,7 +16,7 @@ ALGORITHMS = {
      "Neural Network": MLPClassifier(
         hidden_layer_sizes=(32,),  # Prosta sieć z jedną warstwą i 32 neuronami
         max_iter=50,  # 50 iteracji jest wystarczające przy dużych danych
-        batch_size=512,  # Większy batch size
+        batch_size=256,  # Większy batch size
         solver='adam',
         learning_rate_init=0.005,  # Stabilna szybkość uczenia
         early_stopping=True,  # Zatrzymanie po braku poprawy

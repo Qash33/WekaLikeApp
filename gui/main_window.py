@@ -53,6 +53,9 @@ class WekaLikeApp(QMainWindow):
         self.train_button = create_button("Train Model", "#008CBA", self.trainModel)
         ml_layout.addWidget(self.train_button)
 
+        self.save_model_button = create_button("Save Model", "#03A9F4", self.saveModel)
+        ml_layout.addWidget(self.save_model_button)
+
         self.progress_bar = QProgressBar()
         ml_layout.addWidget(self.progress_bar)
 
@@ -95,6 +98,7 @@ class WekaLikeApp(QMainWindow):
         model_menu = menubar.addMenu("Model")
         model_menu.addAction("Train Model", self.trainModel)
         model_menu.addAction("Load Model", self.loadPretrainedModel)
+        model_menu.addAction("Save Model", self.saveModel)
         model_menu.addAction("Clear Results", self.clearResults)
 
         viz_menu = menubar.addMenu("Visualization")
@@ -107,7 +111,7 @@ class WekaLikeApp(QMainWindow):
 
     def loadPretrainedModel(self):
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Select model file", "", "Pickle Files (*.pkl);;All Files (*)"
+            self, "Select model file", "", "All Files (*);;Pickle Files (*.pkl)"
         )
         if file_path:
             try:
@@ -172,7 +176,7 @@ class WekaLikeApp(QMainWindow):
             self.model = ALGORITHMS[algorithm_name]
 
             # === Cross-validation przed trenowaniem ===
-            cv = KFold(n_splits=5, shuffle=True, random_state=42)
+            cv = KFold(n_splits=3, shuffle=True, random_state=42)
             scores = cross_val_score(self.model, X, y, cv=cv, scoring="neg_mean_absolute_error")
             mean_mae = -scores.mean()
             std_mae = scores.std()
@@ -192,6 +196,22 @@ class WekaLikeApp(QMainWindow):
             self.result_area.setPlainText(f"Błąd przetwarzania danych: {e}")
         except Exception as e:
             self.result_area.setPlainText(f"Wystąpił nieoczekiwany błąd: {e}")
+
+    def saveModel(self):
+        if self.model is None:
+            QMessageBox.warning(self, "No model", "No model to save! Please train or load a model first.")
+            return
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save model as", "", "Pickle Files (*.pkl);;Joblib Files (*.joblib);;All Files (*)"
+        )
+        if file_path:
+            try:
+                joblib.dump(self.model, file_path)
+                self.result_text.append(f"Model saved to: {file_path}")
+                QMessageBox.information(self, "Success", "Model saved successfully!")
+            except Exception as e:
+                QMessageBox.critical(self, "Save Error", f"Could not save model:\n{e}")
+                self.result_text.append(f"Error saving model: {e}")
 
     def clearResults(self):
         self.result_text.clear()
