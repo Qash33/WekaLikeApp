@@ -6,7 +6,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib
 
-matplotlib.use('Agg')  # Backend nieinteraktywny
+
 import matplotlib.pyplot as plt
 
 import os
@@ -89,7 +89,7 @@ class StatsPlotTab(QWidget):
                 QMessageBox.critical(self, "Error", f"Cannot create directory {output_dir}: {e}")
                 return
 
-        plt.figure(figsize=(10, 6))
+        plt.figure(figsize=(14, 10))
 
         try:
             # Generowanie wybranego wykresu
