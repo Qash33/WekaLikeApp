@@ -7,7 +7,7 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 def preprocess_data(df):
     df = df.copy()
     if 'id' in df.columns:
-        df = df.drop(columns=['id'])
+        df = df.drop(columns=['id'], inplace=True)
 
     required_columns = ['price', 'squareMeters', 'rooms', 'city', 'buildYear', 'type']
     for col in required_columns:

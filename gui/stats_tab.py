@@ -38,7 +38,7 @@ class StatsPlotTab(QWidget):
         layout.addWidget(self.num_combo)
 
         self.plot_type_combo = QComboBox()
-        self.plot_type_combo.addItems(["Boxplot", "Scatter Plot", "Trend Analysis", "Correlation Heatmap"])
+        self.plot_type_combo.addItems(["Boxplot", "Scatter Plot", "Trend Analysis", "Correlation Heatmap", "Histogram"])
         layout.addWidget(QLabel("Select plot type:"))
         layout.addWidget(self.plot_type_combo)
 
@@ -76,11 +76,33 @@ class StatsPlotTab(QWidget):
             QMessageBox.warning(self, "Warning", "Please load a dataset first!")
             return
 
+        if 'id' in self.dataset.columns:
+            self.dataset.drop(columns=['id'], inplace=True)
+
         cat = self.cat_combo.currentText()
         num = self.num_combo.currentText()
         plot_type = self.plot_type_combo.currentText()
 
-        # Upewnienie się, że katalog istnieje
+        if not cat or not num:
+            QMessageBox.warning(self, "Warning", "Please select both categorical and numeric variables.")
+            return
+
+        # Czyszczenie danych
+        try:
+            plot_data = self.dataset[[cat, num]].dropna()
+        except KeyError as e:
+            QMessageBox.critical(self, "Error", f"Column not found: {e}")
+            return
+
+        # Sprawdzenie czy dane są numeryczne
+        if not np.issubdtype(plot_data[num].dtype, np.number):
+            QMessageBox.critical(self, "Error", f"The column '{num}' must be numeric.")
+            return
+
+        # Konwersja kolumny kategorycznej (jeśli trzeba)
+        if not pd.api.types.is_categorical_dtype(plot_data[cat]) and not pd.api.types.is_object_dtype(plot_data[cat]):
+            plot_data[cat] = plot_data[cat].astype(str)
+
         output_dir = "data/plots"
         if not os.path.exists(output_dir):
             try:
@@ -92,33 +114,27 @@ class StatsPlotTab(QWidget):
         plt.figure(figsize=(14, 10))
 
         try:
-            # Generowanie wybranego wykresu
             if plot_type == "Boxplot":
-                sns.boxplot(data=self.dataset, x=cat, y=num)
+                sns.boxplot(data=plot_data, x=cat, y=num)
             elif plot_type == "Scatter Plot":
-                sns.scatterplot(data=self.dataset, x=cat, y=num)
+                sns.scatterplot(data=plot_data, x=cat, y=num)
             elif plot_type == "Correlation Heatmap":
                 correlation_matrix = self.dataset.corr(numeric_only=True)
                 sns.heatmap(correlation_matrix, annot=True, cmap="coolwarm")
+            elif plot_type == "Histogram":
+                sns.histplot(data=plot_data, x=num, bins=30)
             elif plot_type == "Trend Analysis":
+                if "price" not in self.dataset.columns:
+                    QMessageBox.critical(self, "Error", "Column 'price' not found for Trend Analysis.")
+                    return
                 sns.lineplot(data=self.dataset, x=num, y="price", hue=cat)
 
             plt.title(f"{plot_type} of {num} by {cat}")
             plt.xticks(rotation=45)
 
-            # Zapis do pliku
             plot_path = os.path.join(output_dir, "stats_plot.png")
             plt.savefig(plot_path)
             plt.close()
-
-            # Wyświetlenie w QLabel
-
-            try:
-                pixmap = QPixmap(os.path.join(output_dir, "stats_plot.png"))
-                self.plot_label.setPixmap(pixmap)
-                self.plot_label.setScaledContents(True)
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to load plot image: {e}")
 
             pixmap = QPixmap(plot_path)
             self.plot_label.setPixmap(pixmap)
@@ -126,5 +142,6 @@ class StatsPlotTab(QWidget):
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error while generating plot: {e}")
+
 
 
