@@ -1,5 +1,10 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QTabWidget, QPushButton
-from PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QTabWidget, QPushButton, QFileDialog,
+    QLabel, QProgressBar, QTextEdit, QScrollArea, QHBoxLayout, QMessageBox,
+    QComboBox
+)
+from PyQt5.QtGui import QFont, QPixmap
+from PyQt5.QtCore import Qt
 from gui.stats_tab import StatsPlotTab
 from gui.widgets import create_button, create_combo_box
 from model.training import TrainModelThread
@@ -7,14 +12,11 @@ from model.preprocess import preprocess_data
 from model.algorithms import ALGORITHMS
 from model.model_manager import save_model
 from utils1.plot_utils import plot_results
-from PyQt5.QtWidgets import QFileDialog, QLabel, QProgressBar, QTextEdit, QScrollArea, QHBoxLayout, QMessageBox, QLabel, QLineEdit, QVBoxLayout
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPixmap
+from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split, cross_val_score, KFold
 import pandas as pd
-import numpy as np
-import os
 import joblib
+import os
 
 class WekaLikeApp(QMainWindow):
     def __init__(self):
@@ -25,7 +27,7 @@ class WekaLikeApp(QMainWindow):
 
     def initUI(self):
         self.setWindowTitle("ML Visualisation & Statistics App")
-        self.setGeometry(100, 100, 900, 700)
+        self.setGeometry(100, 100, 1100, 800)
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -56,8 +58,30 @@ class WekaLikeApp(QMainWindow):
         self.save_model_button = create_button("Save Model", "#03A9F4", self.saveModel)
         ml_layout.addWidget(self.save_model_button)
 
-        self.generate_plot_button = QPushButton("Generate Plot")
-        self.generate_plot_button.clicked.connect(self.generate_plot)
+        # --- Nowe: selektory filtrów ---
+        ml_layout.addWidget(QLabel("Wybierz miasto:"))
+        self.city_combo = QComboBox()
+        self.city_combo.setEnabled(False)
+        ml_layout.addWidget(self.city_combo)
+
+        ml_layout.addWidget(QLabel("Wybierz rok:"))
+        self.year_combo = QComboBox()
+        self.year_combo.setEnabled(False)
+        ml_layout.addWidget(self.year_combo)
+
+        ml_layout.addWidget(QLabel("Wybierz miesiąc:"))
+        self.month_combo = QComboBox()
+        self.month_combo.setEnabled(False)
+        ml_layout.addWidget(self.month_combo)
+
+        ml_layout.addWidget(QLabel("Wybierz parametr liczbowy do analizy:"))
+        self.param_combo = QComboBox()
+        self.param_combo.setEnabled(False)
+        ml_layout.addWidget(self.param_combo)
+        # --- Koniec nowych selektorów ---
+
+        self.generate_plot_button = QPushButton("Generuj wykres i dane")
+        self.generate_plot_button.clicked.connect(self.generate_filtered_plot)
         self.generate_plot_button.setEnabled(False)
         ml_layout.addWidget(self.generate_plot_button)
 
@@ -71,7 +95,7 @@ class WekaLikeApp(QMainWindow):
         ml_layout.addWidget(self.result_area)
 
         self.chart_combo = create_combo_box(["Scatter Plot", "Histogram", "Line Chart"])
-        self.chart_combo.currentIndexChanged.connect(self.handleChartChange)
+        self.chart_combo.currentIndexChanged.connect(self.generate_filtered_plot)
         ml_layout.addWidget(self.chart_combo)
 
         self.plot_label = QLabel()
@@ -128,26 +152,6 @@ class WekaLikeApp(QMainWindow):
                 QMessageBox.critical(self, "Loading error", f"Failed to load model: {e}")
                 self.result_text.append(f"Error loading model: {e}")
 
-    def add_filter_ui(self):
-        filter_layout = QVBoxLayout()
-
-        self.city_filter = QLineEdit()
-        self.city_filter.setPlaceholderText("Filter by city...")
-        filter_layout.addWidget(QLabel("City Filter"))
-        filter_layout.addWidget(self.city_filter)
-
-        self.min_price_filter = QLineEdit()
-        self.min_price_filter.setPlaceholderText("Minimum Price...")
-        filter_layout.addWidget(QLabel("Minimum Price"))
-        filter_layout.addWidget(self.min_price_filter)
-
-        self.max_price_filter = QLineEdit()
-        self.max_price_filter.setPlaceholderText("Maximum Price...")
-        filter_layout.addWidget(QLabel("Maximum Price"))
-        filter_layout.addWidget(self.max_price_filter)
-
-        return filter_layout
-
     def showAboutDialog(self):
         QMessageBox.about(self, "ML Analyze App", "ML Analyze App\nVersion 1.0\nCreated with PyQt5 and scikit-learn.")
 
@@ -163,24 +167,53 @@ class WekaLikeApp(QMainWindow):
                 self.dataset.drop(columns=['id'], inplace=True)
             self.dataset.insert(0, 'id', range(1, len(self.dataset) + 1))
             self.result_text.append(f"Loaded dataset: {file_path.split('/')[-1]}")
+            self.update_filter_selectors()
             self.check_enable_generate_plot()
 
-    def handleChartChange(self):
-        if self.dataset is None:
-            self.result_text.append("Please load a dataset first before changing the chart type.\n")
-            self.chart_combo.setCurrentIndex(0)
-            return
-        chart_type = self.chart_combo.currentText()
-        self.result_text.append(f"Chart type changed to: {chart_type}")
+    def update_filter_selectors(self):
+        # Miasto
+        self.city_combo.clear()
+        self.city_combo.setEnabled(True)
+        self.city_combo.addItem("Wszystkie")
+        if "city" in self.dataset.columns:
+            for val in sorted(self.dataset["city"].dropna().unique()):
+                self.city_combo.addItem(str(val))
+
+        # Rok
+        self.year_combo.clear()
+        self.year_combo.setEnabled(True)
+        self.year_combo.addItem("Wszystkie")
+        if "year" in self.dataset.columns:
+            for val in sorted(self.dataset["year"].dropna().unique()):
+                self.year_combo.addItem(str(val))
+
+        # Miesiąc
+        self.month_combo.clear()
+        self.month_combo.setEnabled(True)
+        self.month_combo.addItem("Wszystkie")
+        if "month" in self.dataset.columns:
+            for val in sorted(self.dataset["month"].dropna().unique()):
+                self.month_combo.addItem(str(val))
+
+        # Parametry (liczbowe) wszystkie numeryczne poza id, price, year, month, city
+        self.param_combo.clear()
+        blacklist = ["id", "city", "year", "month", "price"]
+        self.param_combo.setEnabled(True)
+        numeric_cols = self.dataset.select_dtypes(include='number').columns
+        for col in numeric_cols:
+            if col not in blacklist:
+                self.param_combo.addItem(col)
 
     def trainModel(self):
         if self.dataset is None or not isinstance(self.dataset, pd.DataFrame) or self.dataset.empty:
             self.result_text.append("Brak zbioru danych! Proszę załadować dane przed rozpoczęciem treningu.\n")
             return
         try:
-            X, y = preprocess_data(self.dataset)
+            X, y, feature_cols = preprocess_data(self.dataset)
+            self.model_features = feature_cols  # <-- ZAPISUJESZ LISTĘ CECH!
             algorithm_name = self.algorithm_combo.currentText()
             self.model = ALGORITHMS[algorithm_name]
+
             cv = KFold(n_splits=3, shuffle=True, random_state=42)
             scores = cross_val_score(self.model, X, y, cv=cv, scoring="neg_mean_absolute_error")
             mean_mae = -scores.mean()
@@ -188,6 +221,7 @@ class WekaLikeApp(QMainWindow):
             self.result_text.append(
                 f"Cross-validation (5-fold):\nMean MAE: {mean_mae:.2f}, Std: {std_mae:.2f}\n"
             )
+
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
             algorithm_name = self.algorithm_combo.currentText()
             self.model = ALGORITHMS[algorithm_name]
@@ -197,6 +231,7 @@ class WekaLikeApp(QMainWindow):
             self.train_thread.start()
             save_model(self.model, f"data/models/{algorithm_name}.joblib")
             self.check_enable_generate_plot()
+
         except ValueError as e:
             self.result_text.setPlainText(f"Data processing error: {e}")
         except Exception as e:
@@ -218,23 +253,119 @@ class WekaLikeApp(QMainWindow):
                 QMessageBox.critical(self, "Save Error", f"Could not save model:\n{e}")
                 self.result_text.append(f"Error saving model: {e}")
 
-    def generate_plot(self):
-        if (
-                self.dataset is None
-                or self.model is None
-                or not isinstance(self.dataset, pd.DataFrame)
-                or self.dataset.empty
-        ):
-            QMessageBox.warning(self, "Brak danych", "Najpierw załaduj zbiór danych i wytrenuj lub załaduj model!")
+    def generate_filtered_plot(self):
+        if self.dataset is None or self.dataset.empty:
+            QMessageBox.warning(self, "Brak danych", "Najpierw załaduj zbiór danych!")
             return
+        if self.model is None:
+            QMessageBox.warning(self, "Brak modelu", "Najpierw wytrenuj lub załaduj model!")
+            return
+
+        city = self.city_combo.currentText()
+        year = self.year_combo.currentText()
+        month = self.month_combo.currentText()
+        chart_type = self.chart_combo.currentText()  # Now get chart type!
+
+        # Filtrowanie
+        df = self.dataset.copy()
+        if city != "Wszystkie" and city != "":
+            df = df[df["city"].astype(str) == city]
+        if year != "Wszystkie" and year != "":
+            df = df[df["year"].astype(str) == year]
+        if month != "Wszystkie" and month != "":
+            df = df[df["month"].astype(str) == month]
+
+        if "price" not in df.columns or df.empty:
+            QMessageBox.warning(self, "Brak danych", "Brak danych po filtracji lub brak kolumny 'price'!")
+            return
+
+        # Kodowanie city/type jak w preprocess_data
+        if 'city' in df.columns:
+            df['city'] = LabelEncoder().fit_transform(df['city'])
+        if 'type' in df.columns:
+            df['type'] = LabelEncoder().fit_transform(df['type'])
+
+        # Przygotuj X na podstawie self.model_features
+        feature_cols = getattr(self, 'model_features', None)
+        if not feature_cols:
+            QMessageBox.warning(self, "Brak cech", "Nie znaleziono listy cech użytej do trenowania modelu!")
+            return
+        missing = [f for f in feature_cols if f not in df.columns]
+        if missing:
+            QMessageBox.warning(self, "Brak cech", f"Po filtracji brakuje kolumn: {missing}")
+            return
+
+        X = df[feature_cols].values
+        y = df["price"].values
+
+        # Standaryzacja cech (jeśli używasz standaryzacji w preprocess_data)
+        from sklearn.preprocessing import StandardScaler
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+
+        # Predykcja modelu
         try:
-            X, y = preprocess_data(self.dataset)
-            if X is None or y is None:
-                QMessageBox.warning(self, "Błąd danych", "Błędny format zbioru danych.")
-                return
-            _, X_test, _, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-            predictions = self.model.predict(X_test)
-            plot_results(y_test, predictions, self.chart_combo, self.plot_label)
+            y_pred = self.model.predict(X_scaled)
+
+            import matplotlib.pyplot as plt
+            plt.figure(figsize=(10, 6))
+
+            if chart_type == "Scatter Plot":
+                plt.scatter(y, y_pred, alpha=0.7)
+                plt.plot([y.min(), y.max()], [y.min(), y.max()], 'r--', label='Idealna predykcja')
+                plt.xlabel('Cena rzeczywista')
+                plt.ylabel('Cena przewidywana')
+                plt.title(f'Predykcja ceny - Scatter Plot\n({city}, {year}, {month})')
+                plt.legend()
+            elif chart_type == "Histogram":
+                plt.hist(y, bins=20, alpha=0.5, label='Cena rzeczywista')
+                plt.hist(y_pred, bins=20, alpha=0.5, label='Predykcja')
+                plt.xlabel('Cena')
+                plt.ylabel('Liczba')
+                plt.title(f'Predykcja ceny - Histogram\n({city}, {year}, {month})')
+                plt.legend()
+            elif chart_type == "Line Chart":
+                plt.plot(range(len(y)), y, label='Cena rzeczywista', marker='o')
+                plt.plot(range(len(y)), y_pred, label='Predykcja', marker='x')
+                plt.xlabel('Rekord')
+                plt.ylabel('Cena')
+                plt.title(f'Predykcja ceny - Line Chart\n({city}, {year}, {month})')
+                plt.legend()
+            else:
+                plt.scatter(y, y_pred, alpha=0.7)
+                plt.plot([y.min(), y.max()], [y.min(), y.max()], 'r--', label='Idealna predykcja')
+                plt.xlabel('Cena rzeczywista')
+                plt.ylabel('Cena przewidywana')
+                plt.title(f'Predykcja ceny - Scatter Plot\n({city}, {year}, {month})')
+                plt.legend()
+
+            plt.tight_layout()
+            output_dir = "data/plots"
+            os.makedirs(output_dir, exist_ok=True)
+            plot_path = os.path.join(output_dir, "filtered_pred_vs_true.png")
+            plt.savefig(plot_path)
+            plt.close()
+
+            self.plot_label.setPixmap(QPixmap(plot_path))
+            self.plot_label.setFixedSize(900, 500)
+            self.plot_label.setScaledContents(True)
+
+            # Statystyki tekstowe
+            import numpy as np
+            from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+            mae = mean_absolute_error(y, y_pred)
+            rmse = np.sqrt(mean_squared_error(y, y_pred))
+            r2 = r2_score(y, y_pred)
+            summary = (
+                f"Statystyki ceny (po filtracji):\n"
+                f"Liczba rekordów: {len(df)}\n"
+                f"MAE: {mae:.2f}\n"
+                f"RMSE: {rmse:.2f}\n"
+                f"R²: {r2:.2f}\n\n"
+                f"Opis cen rzeczywistych:\n{pd.Series(y).describe().to_string()}"
+            )
+            self.result_text.setPlainText(summary)
+
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie można wygenerować wykresu: {e}")
 
@@ -243,11 +374,18 @@ class WekaLikeApp(QMainWindow):
         self.plot_label.clear()
         self.model = None
         self.dataset = None
+        self.city_combo.clear()
+        self.year_combo.clear()
+        self.month_combo.clear()
+        self.param_combo.clear()
         self.generate_plot_button.setEnabled(False)
 
     def check_enable_generate_plot(self):
-        # Przycisk aktywny tylko jeśli masz dane i model
-        if self.dataset is not None and self.model is not None:
+        if self.dataset is not None and not self.dataset.empty:
             self.generate_plot_button.setEnabled(True)
+            self.city_combo.setEnabled(True)
+            self.year_combo.setEnabled(True)
+            self.month_combo.setEnabled(True)
+            self.param_combo.setEnabled(True)
         else:
             self.generate_plot_button.setEnabled(False)

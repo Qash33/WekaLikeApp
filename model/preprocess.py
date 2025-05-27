@@ -7,8 +7,7 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 def preprocess_data(df):
     df = df.copy()
     if 'id' in df.columns:
-        df = df.drop(columns=['id'])   # <--- USUŃ inplace=True!
-
+        df = df.drop(columns=['id'])
     required_columns = ['price', 'squareMeters', 'rooms', 'city', 'buildYear', 'type']
     for col in required_columns:
         if col not in df.columns:
@@ -22,13 +21,14 @@ def preprocess_data(df):
     numeric_cols = ['squareMeters', 'rooms', 'buildYear']
     df[numeric_cols] = SimpleImputer(strategy='mean').fit_transform(df[numeric_cols])
 
-    # Rozdzielenie na X (cechy) oraz y (ceny)
-    X = df[['squareMeters', 'rooms', 'city', 'buildYear', 'type']].values
+    # Rozdzielenie na X (cechy) oraz y (ceny) oraz dodanie feature_cols
+    feature_cols = ['squareMeters', 'rooms', 'city', 'buildYear', 'type']
+    X = df[feature_cols].values
     y = df['price'].values
 
     # Standaryzacja cech
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    return X_scaled, y
+    return X_scaled, y, feature_cols
 
