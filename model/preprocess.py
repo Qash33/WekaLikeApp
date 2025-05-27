@@ -7,7 +7,7 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 def preprocess_data(df):
     df = df.copy()
     if 'id' in df.columns:
-        df = df.drop(columns=['id'], inplace=True)
+        df = df.drop(columns=['id'])   # <--- USUŃ inplace=True!
 
     required_columns = ['price', 'squareMeters', 'rooms', 'city', 'buildYear', 'type']
     for col in required_columns:
@@ -16,7 +16,7 @@ def preprocess_data(df):
 
     # Kodowanie kolumn kategorycznych
     df['city'] = LabelEncoder().fit_transform(df['city'])
-    df['type'] = LabelEncoder().fit_transform(df['type'])  # Dodano kodowanie dla 'type'
+    df['type'] = LabelEncoder().fit_transform(df['type'])
 
     # Zastąp brakujące wartości w kolumnach liczbowych
     numeric_cols = ['squareMeters', 'rooms', 'buildYear']

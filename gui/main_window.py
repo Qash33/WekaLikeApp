@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QTabWidget
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QTabWidget, QPushButton
 from PyQt5.QtGui import QFont
 from gui.stats_tab import StatsPlotTab
 from gui.widgets import create_button, create_combo_box
@@ -55,6 +55,11 @@ class WekaLikeApp(QMainWindow):
 
         self.save_model_button = create_button("Save Model", "#03A9F4", self.saveModel)
         ml_layout.addWidget(self.save_model_button)
+
+        self.generate_plot_button = QPushButton("Generate Plot")
+        self.generate_plot_button.clicked.connect(self.generate_plot)
+        self.generate_plot_button.setEnabled(False)
+        ml_layout.addWidget(self.generate_plot_button)
 
         self.progress_bar = QProgressBar()
         ml_layout.addWidget(self.progress_bar)
@@ -118,6 +123,7 @@ class WekaLikeApp(QMainWindow):
                 self.model = joblib.load(file_path)
                 self.result_text.append(f"Pretrained model loaded from: {file_path}")
                 QMessageBox.information(self, "Model loaded", "Pretrained model was loaded successfully!")
+                self.check_enable_generate_plot()
             except Exception as e:
                 QMessageBox.critical(self, "Loading error", f"Failed to load model: {e}")
                 self.result_text.append(f"Error loading model: {e}")
@@ -157,6 +163,7 @@ class WekaLikeApp(QMainWindow):
                 self.dataset.drop(columns=['id'], inplace=True)
             self.dataset.insert(0, 'id', range(1, len(self.dataset) + 1))
             self.result_text.append(f"Loaded dataset: {file_path.split('/')[-1]}")
+            self.check_enable_generate_plot()
 
     def handleChartChange(self):
         if self.dataset is None:
@@ -167,15 +174,13 @@ class WekaLikeApp(QMainWindow):
         self.result_text.append(f"Chart type changed to: {chart_type}")
 
     def trainModel(self):
-        if self.dataset is None or self.dataset.empty:
+        if self.dataset is None or not isinstance(self.dataset, pd.DataFrame) or self.dataset.empty:
             self.result_text.append("Brak zbioru danych! Proszę załadować dane przed rozpoczęciem treningu.\n")
             return
         try:
             X, y = preprocess_data(self.dataset)
             algorithm_name = self.algorithm_combo.currentText()
             self.model = ALGORITHMS[algorithm_name]
-
-            # === Cross-validation przed trenowaniem ===
             cv = KFold(n_splits=3, shuffle=True, random_state=42)
             scores = cross_val_score(self.model, X, y, cv=cv, scoring="neg_mean_absolute_error")
             mean_mae = -scores.mean()
@@ -189,13 +194,13 @@ class WekaLikeApp(QMainWindow):
             self.train_thread = TrainModelThread(self.model, X_train, X_test, y_train, y_test)
             self.train_thread.progress.connect(self.progress_bar.setValue)
             self.train_thread.result.connect(self.result_text.append)
-            self.train_thread.plot_signal.connect(lambda y, p: plot_results(y, p, self.chart_combo, self.plot_label))
             self.train_thread.start()
             save_model(self.model, f"data/models/{algorithm_name}.joblib")
+            self.check_enable_generate_plot()
         except ValueError as e:
-            self.result_area.setPlainText(f"Błąd przetwarzania danych: {e}")
+            self.result_text.setPlainText(f"Data processing error: {e}")
         except Exception as e:
-            self.result_area.setPlainText(f"Wystąpił nieoczekiwany błąd: {e}")
+            self.result_text.setPlainText(f"Unexpected issue: {e}")
 
     def saveModel(self):
         if self.model is None:
@@ -213,8 +218,36 @@ class WekaLikeApp(QMainWindow):
                 QMessageBox.critical(self, "Save Error", f"Could not save model:\n{e}")
                 self.result_text.append(f"Error saving model: {e}")
 
+    def generate_plot(self):
+        if (
+                self.dataset is None
+                or self.model is None
+                or not isinstance(self.dataset, pd.DataFrame)
+                or self.dataset.empty
+        ):
+            QMessageBox.warning(self, "Brak danych", "Najpierw załaduj zbiór danych i wytrenuj lub załaduj model!")
+            return
+        try:
+            X, y = preprocess_data(self.dataset)
+            if X is None or y is None:
+                QMessageBox.warning(self, "Błąd danych", "Błędny format zbioru danych.")
+                return
+            _, X_test, _, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+            predictions = self.model.predict(X_test)
+            plot_results(y_test, predictions, self.chart_combo, self.plot_label)
+        except Exception as e:
+            QMessageBox.critical(self, "Błąd", f"Nie można wygenerować wykresu: {e}")
+
     def clearResults(self):
         self.result_text.clear()
         self.plot_label.clear()
-        if self.dataset is not None:
-            self.result_text.append("Dataset loaded and ready for training.\n")
+        self.model = None
+        self.dataset = None
+        self.generate_plot_button.setEnabled(False)
+
+    def check_enable_generate_plot(self):
+        # Przycisk aktywny tylko jeśli masz dane i model
+        if self.dataset is not None and self.model is not None:
+            self.generate_plot_button.setEnabled(True)
+        else:
+            self.generate_plot_button.setEnabled(False)

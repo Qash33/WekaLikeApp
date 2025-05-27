@@ -122,7 +122,7 @@ class StatsPlotTab(QWidget):
                 correlation_matrix = self.dataset.corr(numeric_only=True)
                 sns.heatmap(correlation_matrix, annot=True, cmap="coolwarm")
             elif plot_type == "Histogram":
-                sns.histplot(data=plot_data, x=num, bins=30)
+                sns.histplot(data=self.dataset, x=num, hue=cat, multiple="stack", palette="bright", shrink=0.8)
             elif plot_type == "Trend Analysis":
                 if "price" not in self.dataset.columns:
                     QMessageBox.critical(self, "Error", "Column 'price' not found for Trend Analysis.")
