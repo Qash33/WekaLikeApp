@@ -238,7 +238,7 @@ class WekaLikeApp(QMainWindow):
 
     def set_slider_ranges_from_dataset(self):
         df = self.dataset
-        # Zakres dla metrażu - mapowanie po indeksie na inty!
+        # Zakres dla metrażu-mapowanie po indeksie na inty!
         if 'squareMeters' in df.columns:
             self.area_unique = sorted(set(int(round(v)) for v in df['squareMeters'].dropna()))
             self.area_slider.setMinimum(0)
@@ -254,7 +254,7 @@ class WekaLikeApp(QMainWindow):
             self.rooms_slider.setMaximum(max_val)
             self.rooms_slider.setValue((min_val, max_val))
             self.rooms_slider.setEnabled(True)
-        # Zakres dla roku budowy - mapowanie po indeksie na inty!
+        # Zakres dla roku budowy-mapowanie po indeksie na inty!
         if 'buildYear' in df.columns:
             self.year_unique = sorted(set(int(v) for v in df['buildYear'].dropna()))
             self.year_slider.setMinimum(0)
