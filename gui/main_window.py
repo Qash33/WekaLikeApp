@@ -209,8 +209,13 @@ class WekaLikeApp(QMainWindow):
             self.result_text.append("Brak zbioru danych! Proszę załadować dane przed rozpoczęciem treningu.\n")
             return
         try:
-            X, y, feature_cols = preprocess_data(self.dataset)
-            self.model_features = feature_cols  # <-- ZAPISUJESZ LISTĘ CECH!
+            # <-- Kluczowa zmiana: zapisz encoder i scaler!
+            from model.preprocess import preprocess_data
+            X, y, feature_cols, enc, scaler = preprocess_data(self.dataset, fit=True)
+            self.model_features = feature_cols
+            self.model_enc = enc
+            self.model_scaler = scaler
+
             algorithm_name = self.algorithm_combo.currentText()
             self.model = ALGORITHMS[algorithm_name]
 
@@ -223,7 +228,6 @@ class WekaLikeApp(QMainWindow):
             )
 
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-            algorithm_name = self.algorithm_combo.currentText()
             self.model = ALGORITHMS[algorithm_name]
             self.train_thread = TrainModelThread(self.model, X_train, X_test, y_train, y_test)
             self.train_thread.progress.connect(self.progress_bar.setValue)
@@ -231,7 +235,6 @@ class WekaLikeApp(QMainWindow):
             self.train_thread.start()
             save_model(self.model, f"data/models/{algorithm_name}.joblib")
             self.check_enable_generate_plot()
-
         except ValueError as e:
             self.result_text.setPlainText(f"Data processing error: {e}")
         except Exception as e:
@@ -264,48 +267,34 @@ class WekaLikeApp(QMainWindow):
         city = self.city_combo.currentText()
         year = self.year_combo.currentText()
         month = self.month_combo.currentText()
-        chart_type = self.chart_combo.currentText()  # Now get chart type!
+        chart_type = self.chart_combo.currentText()
 
-        # Filtrowanie
         df = self.dataset.copy()
         if city != "Wszystkie" and city != "":
-            df = df[df["city"].astype(str) == city]
+            df = df[df["city"] == city]
         if year != "Wszystkie" and year != "":
-            df = df[df["year"].astype(str) == year]
+            if "year" in df.columns:
+                df = df[df["year"].astype(str) == year]
         if month != "Wszystkie" and month != "":
-            df = df[df["month"].astype(str) == month]
+            if "month" in df.columns:
+                df = df[df["month"].astype(str) == month]
 
-        if "price" not in df.columns or df.empty:
-            QMessageBox.warning(self, "Brak danych", "Brak danych po filtracji lub brak kolumny 'price'!")
+        df = df[df['price'].notna()]
+        if df.empty:
+            QMessageBox.warning(self, "Brak danych", "Brak rekordów z niepustą ceną po filtracji!")
             return
 
-        # Kodowanie city/type jak w preprocess_data
-        if 'city' in df.columns:
-            df['city'] = LabelEncoder().fit_transform(df['city'])
-        if 'type' in df.columns:
-            df['type'] = LabelEncoder().fit_transform(df['type'])
+        # KLUCZ: użyj tych samych encoderów i scalerów, które zostały wytrenowane!
+        from model.preprocess import preprocess_data
+        X, y, feature_cols, _, _ = preprocess_data(
+            df,
+            enc=self.model_enc,
+            scaler=self.model_scaler,
+            fit=False
+        )
 
-        # Przygotuj X na podstawie self.model_features
-        feature_cols = getattr(self, 'model_features', None)
-        if not feature_cols:
-            QMessageBox.warning(self, "Brak cech", "Nie znaleziono listy cech użytej do trenowania modelu!")
-            return
-        missing = [f for f in feature_cols if f not in df.columns]
-        if missing:
-            QMessageBox.warning(self, "Brak cech", f"Po filtracji brakuje kolumn: {missing}")
-            return
-
-        X = df[feature_cols].values
-        y = df["price"].values
-
-        # Standaryzacja cech (jeśli używasz standaryzacji w preprocess_data)
-        from sklearn.preprocessing import StandardScaler
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-
-        # Predykcja modelu
         try:
-            y_pred = self.model.predict(X_scaled)
+            y_pred = self.model.predict(X)
 
             import matplotlib.pyplot as plt
             plt.figure(figsize=(10, 6))

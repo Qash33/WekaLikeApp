@@ -1,34 +1,46 @@
 import pandas as pd
 import numpy as np
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-# Przetwarza dane do formatu numerycznego i zwraca X i y
-def preprocess_data(df):
+def preprocess_data(df, enc=None, scaler=None, fit=True):
     df = df.copy()
-    if 'id' in df.columns:
-        df = df.drop(columns=['id'])
-    required_columns = ['price', 'squareMeters', 'rooms', 'city', 'buildYear', 'type']
-    for col in required_columns:
-        if col not in df.columns:
-            raise ValueError(f"Kolumna {col} jest wymagana w zbiorze danych!")
+    excluded_cols = ['id', 'price', 'year', 'month']
+    feature_columns = [col for col in df.columns if col not in excluded_cols]
 
-    # Kodowanie kolumn kategorycznych
-    df['city'] = LabelEncoder().fit_transform(df['city'])
-    df['type'] = LabelEncoder().fit_transform(df['type'])
+    cat_features = df[feature_columns].select_dtypes(include=['object', 'category']).columns.tolist()
+    num_features = df[feature_columns].select_dtypes(include=[np.number]).columns.tolist()
 
-    # Zastąp brakujące wartości w kolumnach liczbowych
-    numeric_cols = ['squareMeters', 'rooms', 'buildYear']
-    df[numeric_cols] = SimpleImputer(strategy='mean').fit_transform(df[numeric_cols])
+    # Imputacja
+    if num_features:
+        num_imputer = SimpleImputer(strategy='median')
+        X_num = num_imputer.fit_transform(df[num_features])
+    else:
+        X_num = np.empty((len(df), 0))
 
-    # Rozdzielenie na X (cechy) oraz y (ceny) oraz dodanie feature_cols
-    feature_cols = ['squareMeters', 'rooms', 'city', 'buildYear', 'type']
-    X = df[feature_cols].values
-    y = df['price'].values
+    if cat_features:
+        cat_imputer = SimpleImputer(strategy='most_frequent')
+        X_cat_imp = pd.DataFrame(cat_imputer.fit_transform(df[cat_features]), columns=cat_features)
+        if fit or enc is None:
+            enc = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+            X_cat = enc.fit_transform(X_cat_imp)
+        else:
+            X_cat = enc.transform(X_cat_imp)
+    else:
+        X_cat = np.empty((len(df), 0))
+        enc = None
 
-    # Standaryzacja cech
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
+    if X_num.shape[1] > 0:
+        if fit or scaler is None:
+            scaler = StandardScaler()
+            X_num = scaler.fit_transform(X_num)
+        else:
+            X_num = scaler.transform(X_num)
+    else:
+        scaler = None
 
-    return X_scaled, y, feature_cols
+    X = np.hstack((X_cat, X_num))
+    y = np.log(df['price'].values)
+    feature_cols = cat_features + num_features
 
+    return X, y, feature_cols, enc, scaler
