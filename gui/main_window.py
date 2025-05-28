@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QTabWidget, QPushButton, QFileDialog,
     QLabel, QProgressBar, QTextEdit, QScrollArea, QHBoxLayout, QMessageBox,
-    QComboBox
+    QComboBox, QSizePolicy
 )
 from PyQt5.QtGui import QFont, QPixmap
 from PyQt5.QtCore import Qt
@@ -23,6 +23,8 @@ class WekaLikeApp(QMainWindow):
         super().__init__()
         self.dataset = None
         self.model = None
+        self.model_enc = None
+        self.model_scaler = None
         self.initUI()
 
     def initUI(self):
@@ -89,7 +91,9 @@ class WekaLikeApp(QMainWindow):
         ml_layout.addWidget(self.progress_bar)
 
         self.result_area = QScrollArea()
+        self.result_area.setWidgetResizable(True)
         self.result_text = QTextEdit()
+        self.result_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.result_text.setReadOnly(True)
         self.result_area.setWidget(self.result_text)
         ml_layout.addWidget(self.result_area)
@@ -140,11 +144,14 @@ class WekaLikeApp(QMainWindow):
 
     def loadPretrainedModel(self):
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Select model file", "", "All Files (*);;Pickle Files (*.pkl)"
+            self, "Select model file", "", "All Files (*);;Pickle Files (*.pkl);;Joblib Files (*.joblib)"
         )
         if file_path:
             try:
-                self.model = joblib.load(file_path)
+                data = joblib.load(file_path)
+                self.model = data["model"]
+                self.model_enc = data.get("enc", None)
+                self.model_scaler = data.get("scaler", None)
                 self.result_text.append(f"Pretrained model loaded from: {file_path}")
                 QMessageBox.information(self, "Model loaded", "Pretrained model was loaded successfully!")
                 self.check_enable_generate_plot()
@@ -224,7 +231,7 @@ class WekaLikeApp(QMainWindow):
             mean_mae = -scores.mean()
             std_mae = scores.std()
             self.result_text.append(
-                f"Cross-validation (5-fold):\nMean MAE: {mean_mae:.2f}, Std: {std_mae:.2f}\n"
+                f"Cross-validation (3-fold):\nMean MAE: {mean_mae:.2f}, Std: {std_mae:.2f}\n"
             )
 
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -249,7 +256,11 @@ class WekaLikeApp(QMainWindow):
         )
         if file_path:
             try:
-                joblib.dump(self.model, file_path)
+                joblib.dump({
+                    "model": self.model,
+                    "enc": self.model_enc,
+                    "scaler": self.model_scaler
+                }, file_path)
                 self.result_text.append(f"Model saved to: {file_path}")
                 QMessageBox.information(self, "Success", "Model saved successfully!")
             except Exception as e:
@@ -284,9 +295,9 @@ class WekaLikeApp(QMainWindow):
             QMessageBox.warning(self, "Brak danych", "Brak rekordów z niepustą ceną po filtracji!")
             return
 
-        # KLUCZ: użyj tych samych encoderów i scalerów, które zostały wytrenowane!
+        # Używamy tych samych encoderów i scalerów co przy treningu
         from model.preprocess import preprocess_data
-        X, y, feature_cols, _, _ = preprocess_data(
+        X, y_log, feature_cols, _, _ = preprocess_data(
             df,
             enc=self.model_enc,
             scaler=self.model_scaler,
@@ -294,37 +305,42 @@ class WekaLikeApp(QMainWindow):
         )
 
         try:
-            y_pred = self.model.predict(X)
+            y_pred_log = self.model.predict(X)
+
+            # Przekształcenie z log-ceny na normalną cenę
+            import numpy as np
+            y_real = np.exp(y_log)
+            y_pred_real = np.exp(y_pred_log)
 
             import matplotlib.pyplot as plt
             plt.figure(figsize=(10, 6))
 
             if chart_type == "Scatter Plot":
-                plt.scatter(y, y_pred, alpha=0.7)
-                plt.plot([y.min(), y.max()], [y.min(), y.max()], 'r--', label='Idealna predykcja')
-                plt.xlabel('Cena rzeczywista')
-                plt.ylabel('Cena przewidywana')
+                plt.scatter(y_real, y_pred_real, alpha=0.7)
+                plt.plot([y_real.min(), y_real.max()], [y_real.min(), y_real.max()], 'r--', label='Idealna predykcja')
+                plt.xlabel('Cena rzeczywista [PLN]')
+                plt.ylabel('Cena przewidywana [PLN]')
                 plt.title(f'Predykcja ceny - Scatter Plot\n({city}, {year}, {month})')
                 plt.legend()
             elif chart_type == "Histogram":
-                plt.hist(y, bins=20, alpha=0.5, label='Cena rzeczywista')
-                plt.hist(y_pred, bins=20, alpha=0.5, label='Predykcja')
-                plt.xlabel('Cena')
+                plt.hist(y_real, bins=20, alpha=0.5, label='Cena rzeczywista')
+                plt.hist(y_pred_real, bins=20, alpha=0.5, label='Predykcja')
+                plt.xlabel('Cena [PLN]')
                 plt.ylabel('Liczba')
                 plt.title(f'Predykcja ceny - Histogram\n({city}, {year}, {month})')
                 plt.legend()
             elif chart_type == "Line Chart":
-                plt.plot(range(len(y)), y, label='Cena rzeczywista', marker='o')
-                plt.plot(range(len(y)), y_pred, label='Predykcja', marker='x')
+                plt.plot(range(len(y_real)), y_real, label='Cena rzeczywista', marker='o')
+                plt.plot(range(len(y_pred_real)), y_pred_real, label='Predykcja', marker='x')
                 plt.xlabel('Rekord')
-                plt.ylabel('Cena')
+                plt.ylabel('Cena [PLN]')
                 plt.title(f'Predykcja ceny - Line Chart\n({city}, {year}, {month})')
                 plt.legend()
             else:
-                plt.scatter(y, y_pred, alpha=0.7)
-                plt.plot([y.min(), y.max()], [y.min(), y.max()], 'r--', label='Idealna predykcja')
-                plt.xlabel('Cena rzeczywista')
-                plt.ylabel('Cena przewidywana')
+                plt.scatter(y_real, y_pred_real, alpha=0.7)
+                plt.plot([y_real.min(), y_real.max()], [y_real.min(), y_real.max()], 'r--', label='Idealna predykcja')
+                plt.xlabel('Cena rzeczywista [PLN]')
+                plt.ylabel('Cena przewidywana [PLN]')
                 plt.title(f'Predykcja ceny - Scatter Plot\n({city}, {year}, {month})')
                 plt.legend()
 
@@ -340,18 +356,23 @@ class WekaLikeApp(QMainWindow):
             self.plot_label.setScaledContents(True)
 
             # Statystyki tekstowe
-            import numpy as np
+            y_real = np.exp(y_log)
+            y_pred_real = np.exp(y_pred_log)
+
+            # Statystyki tekstowe
             from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-            mae = mean_absolute_error(y, y_pred)
-            rmse = np.sqrt(mean_squared_error(y, y_pred))
-            r2 = r2_score(y, y_pred)
+            mae = mean_absolute_error(y_real, y_pred_real)
+            rmse = np.sqrt(mean_squared_error(y_real, y_pred_real))
+            r2 = r2_score(y_real, y_pred_real)
+            desc = pd.Series(y_real).describe()
+            desc = desc.apply(lambda x: f"{x:,.0f}").to_string()
             summary = (
                 f"Statystyki ceny (po filtracji):\n"
-                f"Liczba rekordów: {len(df)}\n"
-                f"MAE: {mae:.2f}\n"
-                f"RMSE: {rmse:.2f}\n"
+                f"Liczba rekordów: {len(y_real)}\n"
+                f"MAE: {mae:,.2f} PLN\n"
+                f"RMSE: {rmse:,.2f} PLN\n"
                 f"R²: {r2:.2f}\n\n"
-                f"Opis cen rzeczywistych:\n{pd.Series(y).describe().to_string()}"
+                f"Opis cen rzeczywistych:\n{desc}"
             )
             self.result_text.setPlainText(summary)
 
