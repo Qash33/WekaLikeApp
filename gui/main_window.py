@@ -209,8 +209,9 @@ class WekaLikeApp(QMainWindow):
             self.result_text.append("Brak zbioru danych! Proszę załadować dane przed rozpoczęciem treningu.\n")
             return
         try:
-            X, y, feature_cols = preprocess_data(self.dataset)
-            self.model_features = feature_cols  # <-- ZAPISUJESZ LISTĘ CECH!
+            X, y, feature_cols, encoders = preprocess_data(self.dataset)
+            self.model_features = feature_cols # <-- ZAPISUJESZ LISTĘ CECH!
+            self.model_encoders = encoders
             algorithm_name = self.algorithm_combo.currentText()
             self.model = ALGORITHMS[algorithm_name]
 
@@ -264,44 +265,38 @@ class WekaLikeApp(QMainWindow):
         city = self.city_combo.currentText()
         year = self.year_combo.currentText()
         month = self.month_combo.currentText()
-        chart_type = self.chart_combo.currentText()  # Now get chart type!
+        chart_type = self.chart_combo.currentText()
 
-        # Filtrowanie
+        # Filtrowanie po oryginalnych nazwach (stringach)
         df = self.dataset.copy()
         if city != "Wszystkie" and city != "":
-            df = df[df["city"].astype(str) == city]
+            df = df[df["city"] == city]
         if year != "Wszystkie" and year != "":
-            df = df[df["year"].astype(str) == year]
+            if "year" in df.columns:
+                df = df[df["year"].astype(str) == year]
         if month != "Wszystkie" and month != "":
-            df = df[df["month"].astype(str) == month]
+            if "month" in df.columns:
+                df = df[df["month"].astype(str) == month]
 
-        if "price" not in df.columns or df.empty:
-            QMessageBox.warning(self, "Brak danych", "Brak danych po filtracji lub brak kolumny 'price'!")
+        # Usuń rekordy bez ceny
+        df = df[df['price'].notna()]
+        if df.empty:
+            QMessageBox.warning(self, "Brak danych", "Brak rekordów z niepustą ceną po filtracji!")
             return
 
-        # Kodowanie city/type jak w preprocess_data
-        if 'city' in df.columns:
-            df['city'] = LabelEncoder().fit_transform(df['city'])
-        if 'type' in df.columns:
-            df['type'] = LabelEncoder().fit_transform(df['type'])
-
-        # Przygotuj X na podstawie self.model_features
+        # Preprocessing – użyj tych samych encoderów co przy trenowaniu (fit_encoders = False)
+        encoders = getattr(self, 'model_encoders', None)
         feature_cols = getattr(self, 'model_features', None)
-        if not feature_cols:
-            QMessageBox.warning(self, "Brak cech", "Nie znaleziono listy cech użytej do trenowania modelu!")
-            return
-        missing = [f for f in feature_cols if f not in df.columns]
-        if missing:
-            QMessageBox.warning(self, "Brak cech", f"Po filtracji brakuje kolumn: {missing}")
+        if encoders is None or feature_cols is None:
+            QMessageBox.warning(self, "Brak cech/encoderów", "Brak listy cech lub encoderów z trenowania!")
             return
 
-        X = df[feature_cols].values
-        y = df["price"].values
-
-        # Standaryzacja cech (jeśli używasz standaryzacji w preprocess_data)
-        from sklearn.preprocessing import StandardScaler
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
+        from model.preprocess import preprocess_data
+        X_scaled, y, feature_cols, _ = preprocess_data(
+            df,
+            encoders=encoders,
+            fit_encoders=False
+        )
 
         # Predykcja modelu
         try:
@@ -340,12 +335,14 @@ class WekaLikeApp(QMainWindow):
                 plt.legend()
 
             plt.tight_layout()
+            import os
             output_dir = "data/plots"
             os.makedirs(output_dir, exist_ok=True)
             plot_path = os.path.join(output_dir, "filtered_pred_vs_true.png")
             plt.savefig(plot_path)
             plt.close()
 
+            from PyQt5.QtGui import QPixmap
             self.plot_label.setPixmap(QPixmap(plot_path))
             self.plot_label.setFixedSize(900, 500)
             self.plot_label.setScaledContents(True)

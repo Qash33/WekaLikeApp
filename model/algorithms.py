@@ -3,13 +3,16 @@ from sklearn.svm import LinearSVC
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neural_network import MLPClassifier
 from lightgbm import LGBMClassifier
+from sklearn.ensemble import RandomForestRegressor
+import lightgbm as lgb
 
 # Słownik nazw algorytmów do instancji modeli
 ALGORITHMS = {
-    "Random Forest": RandomForestClassifier(
-        n_estimators=10,  # Zmniejszono liczbę drzew
-        max_depth=10,  # Ograniczenie maksymalnej głębokości drzewa
-        n_jobs=1  # Ustawienie na 1, aby uniknąć problemów z wielowątkowością
+    "Random Forest": RandomForestRegressor(
+        n_estimators=200,
+        max_depth=20,
+        n_jobs=10,
+        random_state=42
     ),
     "SVM": LinearSVC(max_iter=1000, dual=False),
     "Decision Tree": DecisionTreeClassifier(max_depth=5),
@@ -24,13 +27,11 @@ ALGORITHMS = {
         n_iter_no_change=5,  # Przerwij po 5 epokach bez poprawy
         random_state=42  # Ustalona losowość
     ),
-    "LightGBM": LGBMClassifier(
-        n_estimators=100,  # Liczba słabych klasyfikatorów
-        max_depth=6,  # Maksymalna głębokość drzew
-        learning_rate=0.1,  # Szybkość uczenia
-        n_jobs=-1,  # Użycie wszystkich dostępnych rdzeni
-        random_state=42,  # Powtarzalność wyników
-        early_stopping_round=5  # Zamiast 'early_stopping=True' i 'n_iter_no_change=5'
+    "LightGBM": lgb.LGBMRegressor(
+        n_estimators=200,
+        max_depth=20,
+        n_jobs=10,
+        random_state=42
     )
 
 
