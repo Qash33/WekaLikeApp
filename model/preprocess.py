@@ -1,64 +1,46 @@
 import pandas as pd
 import numpy as np
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-def preprocess_data(df, encoders=None, fit_encoders=True):
+def preprocess_data(df, enc=None, scaler=None, fit=True):
     df = df.copy()
-    if 'id' in df.columns:
-        df = df.drop(columns=['id'])
+    excluded_cols = ['id', 'price', 'year', 'month']
+    feature_columns = [col for col in df.columns if col not in excluded_cols]
 
-    required_columns = [
-        'price', 'squareMeters', 'rooms', 'city', 'buildYear', 'type',
-        'centreDistance', 'floor', 'floorCount', 'condition', 'buildingMaterial', 'ownership',
-        'latitude', 'longitude', 'poiCount', 'hasParkingSpace' ,'hasBalcony' ,'hasElevator' ,'hasSecurity' ,'hasStorageRoom'
-    ]
-    for col in required_columns:
-        if col not in df.columns:
-            raise ValueError(f"Kolumna {col} jest wymagana w zbiorze danych!")
+    cat_features = df[feature_columns].select_dtypes(include=['object', 'category']).columns.tolist()
+    num_features = df[feature_columns].select_dtypes(include=[np.number]).columns.tolist()
 
-    # Kolumny kategoryczne
-    category_cols = ['city', 'type', 'condition', 'buildingMaterial', 'ownership', 'hasParkingSpace' ,'hasBalcony' ,'hasElevator' ,'hasSecurity' ,'hasStorageRoom']
-    # Zamień nietypowe wartości i NaN na 'Brak'
-    for col in category_cols:
-        df[col] = (
-            df[col]
-            .replace(['nan', 'NaN', 'n/a', 'N/A', np.nan, None, ''], 'Brak')
-            .astype(str)
-        )
-    # Zakoduj wszystkie kategorie liczbami
-    encoders = encoders or {}
-    for col in category_cols:
-        if fit_encoders or col not in encoders:
-            le = LabelEncoder()
-            df[col] = df[col].replace([...], 'Brak').astype(str)
-            df[col] = le.fit_transform(df[col])
-            encoders[col] = le
+    # Imputacja
+    if num_features:
+        num_imputer = SimpleImputer(strategy='median')
+        X_num = num_imputer.fit_transform(df[num_features])
+    else:
+        X_num = np.empty((len(df), 0))
+
+    if cat_features:
+        cat_imputer = SimpleImputer(strategy='most_frequent')
+        X_cat_imp = pd.DataFrame(cat_imputer.fit_transform(df[cat_features]), columns=cat_features)
+        if fit or enc is None:
+            enc = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+            X_cat = enc.fit_transform(X_cat_imp)
         else:
-            df[col] = df[col].replace([...], 'Brak').astype(str)
-            df[col] = encoders[col].transform(df[col])
+            X_cat = enc.transform(X_cat_imp)
+    else:
+        X_cat = np.empty((len(df), 0))
+        enc = None
 
-    # Kolumny liczbowe
-    numeric_cols = [
-        'squareMeters', 'rooms', 'buildYear', 'centreDistance', 'floor', 'floorCount', 'latitude', 'longitude', 'poiCount'
-    ]
-    df[numeric_cols] = SimpleImputer(strategy='mean').fit_transform(df[numeric_cols])
+    if X_num.shape[1] > 0:
+        if fit or scaler is None:
+            scaler = StandardScaler()
+            X_num = scaler.fit_transform(X_num)
+        else:
+            X_num = scaler.transform(X_num)
+    else:
+        scaler = None
 
-    # Ustaw kolumny cech
-    feature_cols = [
-        'squareMeters', 'rooms', 'city', 'buildYear', 'type',
-        'centreDistance', 'floor', 'floorCount', 'condition', 'buildingMaterial', 'ownership',
-        'latitude', 'longitude', 'poiCount', 'hasParkingSpace' ,'hasBalcony' ,'hasElevator' ,'hasSecurity' ,'hasStorageRoom'
-    ]
-    # Upewnij się, że wszystkie kolumny są float (nawet jeśli to int)
-    X = df[feature_cols].astype(float)
-    y = df['price'].values
+    X = np.hstack((X_cat, X_num))
+    y = np.log(df['price'].values)
+    feature_cols = cat_features + num_features
 
-    # Standaryzacja
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-
-    print(df[['city', 'price']].head(15))
-    print(df['price'].isna().sum(), "NaN w price po filtrze")
-
-    return X_scaled, y, feature_cols, encoders
+    return X, y, feature_cols, enc, scaler

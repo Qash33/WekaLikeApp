@@ -1,8 +1,6 @@
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import LinearSVC
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.neural_network import MLPClassifier
-from lightgbm import LGBMClassifier
+from sklearn.neural_network import MLPRegressor
 from sklearn.ensemble import RandomForestRegressor
 import lightgbm as lgb
 
@@ -11,21 +9,21 @@ ALGORITHMS = {
     "Random Forest": RandomForestRegressor(
         n_estimators=200,
         max_depth=20,
-        n_jobs=10,
+        n_jobs=15,
         random_state=42
     ),
     "SVM": LinearSVC(max_iter=1000, dual=False),
     "Decision Tree": DecisionTreeClassifier(max_depth=5),
-     "Neural Network": MLPClassifier(
-        hidden_layer_sizes=(32,),  # Prosta sieć z jedną warstwą i 32 neuronami
-        max_iter=50,  # 50 iteracji jest wystarczające przy dużych danych
-        batch_size=256,  # Większy batch size
-        solver='adam',
-        learning_rate_init=0.005,  # Stabilna szybkość uczenia
-        early_stopping=True,  # Zatrzymanie po braku poprawy
-        validation_fraction=0.1,  # 10% danych walidacyjnych
-        n_iter_no_change=5,  # Przerwij po 5 epokach bez poprawy
-        random_state=42  # Ustalona losowość
+     "Neural Network": MLPRegressor(
+         hidden_layer_sizes=(64, 32),  # liczba warstw/neuronów (możesz zmieniać)
+         activation='relu',  # relu najlepszy do regresji
+         solver='adam',  # adam działa szybciej i lepiej domyślnie
+         alpha=1e-3,  # regularizacja, możesz zostawić lub dać domyślne (1e-4)
+         max_iter=400,  # ile maksymalnie epok
+         early_stopping=True,  # zatrzymanie gdy brak postępu
+         n_iter_no_change=15,  # ile epok bez poprawy
+         random_state=42,
+         verbose=True
     ),
     "LightGBM": lgb.LGBMRegressor(
         n_estimators=200,

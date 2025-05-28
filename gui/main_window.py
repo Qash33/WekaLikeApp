@@ -209,9 +209,13 @@ class WekaLikeApp(QMainWindow):
             self.result_text.append("Brak zbioru danych! Proszę załadować dane przed rozpoczęciem treningu.\n")
             return
         try:
-            X, y, feature_cols, encoders = preprocess_data(self.dataset)
-            self.model_features = feature_cols # <-- ZAPISUJESZ LISTĘ CECH!
-            self.model_encoders = encoders
+            # <-- Kluczowa zmiana: zapisz encoder i scaler!
+            from model.preprocess import preprocess_data
+            X, y, feature_cols, enc, scaler = preprocess_data(self.dataset, fit=True)
+            self.model_features = feature_cols
+            self.model_enc = enc
+            self.model_scaler = scaler
+
             algorithm_name = self.algorithm_combo.currentText()
             self.model = ALGORITHMS[algorithm_name]
 
@@ -224,7 +228,6 @@ class WekaLikeApp(QMainWindow):
             )
 
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-            algorithm_name = self.algorithm_combo.currentText()
             self.model = ALGORITHMS[algorithm_name]
             self.train_thread = TrainModelThread(self.model, X_train, X_test, y_train, y_test)
             self.train_thread.progress.connect(self.progress_bar.setValue)
@@ -232,7 +235,6 @@ class WekaLikeApp(QMainWindow):
             self.train_thread.start()
             save_model(self.model, f"data/models/{algorithm_name}.joblib")
             self.check_enable_generate_plot()
-
         except ValueError as e:
             self.result_text.setPlainText(f"Data processing error: {e}")
         except Exception as e:
@@ -267,7 +269,6 @@ class WekaLikeApp(QMainWindow):
         month = self.month_combo.currentText()
         chart_type = self.chart_combo.currentText()
 
-        # Filtrowanie po oryginalnych nazwach (stringach)
         df = self.dataset.copy()
         if city != "Wszystkie" and city != "":
             df = df[df["city"] == city]
@@ -278,29 +279,22 @@ class WekaLikeApp(QMainWindow):
             if "month" in df.columns:
                 df = df[df["month"].astype(str) == month]
 
-        # Usuń rekordy bez ceny
         df = df[df['price'].notna()]
         if df.empty:
             QMessageBox.warning(self, "Brak danych", "Brak rekordów z niepustą ceną po filtracji!")
             return
 
-        # Preprocessing – użyj tych samych encoderów co przy trenowaniu (fit_encoders = False)
-        encoders = getattr(self, 'model_encoders', None)
-        feature_cols = getattr(self, 'model_features', None)
-        if encoders is None or feature_cols is None:
-            QMessageBox.warning(self, "Brak cech/encoderów", "Brak listy cech lub encoderów z trenowania!")
-            return
-
+        # KLUCZ: użyj tych samych encoderów i scalerów, które zostały wytrenowane!
         from model.preprocess import preprocess_data
-        X_scaled, y, feature_cols, _ = preprocess_data(
+        X, y, feature_cols, _, _ = preprocess_data(
             df,
-            encoders=encoders,
-            fit_encoders=False
+            enc=self.model_enc,
+            scaler=self.model_scaler,
+            fit=False
         )
 
-        # Predykcja modelu
         try:
-            y_pred = self.model.predict(X_scaled)
+            y_pred = self.model.predict(X)
 
             import matplotlib.pyplot as plt
             plt.figure(figsize=(10, 6))
@@ -335,14 +329,12 @@ class WekaLikeApp(QMainWindow):
                 plt.legend()
 
             plt.tight_layout()
-            import os
             output_dir = "data/plots"
             os.makedirs(output_dir, exist_ok=True)
             plot_path = os.path.join(output_dir, "filtered_pred_vs_true.png")
             plt.savefig(plot_path)
             plt.close()
 
-            from PyQt5.QtGui import QPixmap
             self.plot_label.setPixmap(QPixmap(plot_path))
             self.plot_label.setFixedSize(900, 500)
             self.plot_label.setScaledContents(True)
