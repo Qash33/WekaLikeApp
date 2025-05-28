@@ -40,7 +40,9 @@ def preprocess_data(df, enc=None, scaler=None, fit=True):
         scaler = None
 
     X = np.hstack((X_cat, X_num))
-    y = np.log(df['price'].values)
+    y = None
+    if fit and 'price' in df.columns:
+        y = np.log(df['price'].values)
     feature_cols = cat_features + num_features
 
     return X, y, feature_cols, enc, scaler

@@ -116,10 +116,19 @@ class WekaLikeApp(QMainWindow):
 
         # --- Koniec nowych selektorów ---
 
+        self.button_layout = QHBoxLayout()
+
         self.generate_plot_button = QPushButton("Generuj wykres i dane")
         self.generate_plot_button.clicked.connect(self.generate_filtered_plot)
         self.generate_plot_button.setEnabled(False)
-        ml_layout.addWidget(self.generate_plot_button)
+        self.button_layout.addWidget(self.generate_plot_button)
+
+        self.predict_button = QPushButton("Przewiduj cenę")
+        self.predict_button.setFont(QFont("Arial", 12))
+        self.predict_button.clicked.connect(self.predict_price_dialog)
+        self.button_layout.addWidget(self.predict_button)
+
+        ml_layout.addLayout(self.button_layout)
 
         self.progress_bar = QProgressBar()
         ml_layout.addWidget(self.progress_bar)
@@ -186,6 +195,13 @@ class WekaLikeApp(QMainWindow):
                 self.model = data["model"]
                 self.model_enc = data.get("enc", None)
                 self.model_scaler = data.get("scaler", None)
+                # Pobierz feature_cols do self.model_features
+                self.model_features = data.get("feature_cols", None)
+                # Jeśli nie ma w modelu, a dataset już jest - wyciągnij z preprocess_data
+                if self.model_features is None and self.dataset is not None:
+                    from model.preprocess import preprocess_data
+                    _, _, feature_cols, _, _ = preprocess_data(self.dataset, fit=True)
+                    self.model_features = feature_cols
                 self.result_text.append(f"Pretrained model loaded from: {file_path}")
                 QMessageBox.information(self, "Model loaded", "Pretrained model was loaded successfully!")
                 self.check_enable_generate_plot()
@@ -299,7 +315,7 @@ class WekaLikeApp(QMainWindow):
         try:
             from model.preprocess import preprocess_data
             X, y, feature_cols, enc, scaler = preprocess_data(self.dataset, fit=True)
-            self.model_features = feature_cols
+            self.model_features = feature_cols  # <-- tutaj ustawiamy cechy modelu!
             self.model_enc = enc
             self.model_scaler = scaler
 
@@ -336,10 +352,12 @@ class WekaLikeApp(QMainWindow):
         )
         if file_path:
             try:
+                # Dodaj feature_cols do zapisywanego modelu!
                 joblib.dump({
                     "model": self.model,
                     "enc": self.model_enc,
-                    "scaler": self.model_scaler
+                    "scaler": self.model_scaler,
+                    "feature_cols": getattr(self, "model_features", None)
                 }, file_path)
                 self.result_text.append(f"Model saved to: {file_path}")
                 QMessageBox.information(self, "Success", "Model saved successfully!")
@@ -497,6 +515,128 @@ class WekaLikeApp(QMainWindow):
 
         except Exception as e:
             QMessageBox.critical(self, "Błąd", f"Nie można wygenerować wykresu: {e}")
+
+    def predict_price_dialog(self):
+        if self.dataset is None or self.dataset.empty or self.model is None or not hasattr(self, "model_features"):
+            self.result_text.append("Najpierw załaduj dane i wytrenuj/załaduj model!\n")
+            return
+
+        miasto_lista = sorted(self.dataset["city"].dropna().unique())
+        year_build_min = int(self.dataset["buildYear"].dropna().astype(int).min())
+        year_build_max = int(self.dataset["buildYear"].dropna().astype(int).max())
+
+        self.result_text.append("=== Przewidywanie ceny mieszkania ===")
+
+        from PyQt5.QtWidgets import QInputDialog, QComboBox, QDialog, QVBoxLayout, QPushButton, QLabel
+
+        # Rok
+        rok, ok = QInputDialog.getInt(self, "Wybierz rok", "W którym roku? (od 2025 wzwyż):", min=2025, value=2025)
+        if not ok:
+            self.result_text.append("Anulowano przewidywanie ceny.")
+            return
+
+        # Miesiąc
+        miesiac, ok = QInputDialog.getText(self, "Wybierz miesiąc",
+                                           "Podaj miesiąc (np. '1', 'styczeń', lub Enter jeśli dowolny):")
+        if not ok:
+            self.result_text.append("Anulowano przewidywanie ceny.")
+            return
+
+        # Powierzchnia (>0)
+        while True:
+            m2, ok = QInputDialog.getDouble(self, "Podaj metraż", "Podaj ilość metrów kwadratowych (> 1):", min=1,
+                                            decimals=2)
+            if not ok:
+                self.result_text.append("Anulowano przewidywanie ceny.")
+                return
+            if m2 > 0:
+                break
+            else:
+                self.result_text.append("Metraż musi być większy od zera.")
+
+        # Rok budowy
+        year_build, ok = QInputDialog.getInt(self, "Rok budowy",
+                                             f"Podaj rok budowy ({year_build_min}-{year_build_max}):",
+                                             min=year_build_min, max=year_build_max)
+        if not ok:
+            self.result_text.append("Anulowano przewidywanie ceny.")
+            return
+
+        # Ilość pokoi
+        rooms, ok = QInputDialog.getInt(self, "Ilość pokoi", "Podaj ilość pokoi (dowolna liczba):", min=1, value=1)
+        if not ok:
+            self.result_text.append("Anulowano przewidywanie ceny.")
+            return
+
+        # Miasto (ComboBox)
+        class MiastoDialog(QDialog):
+            def __init__(self, miasta):
+                super().__init__()
+                self.setWindowTitle("Wybierz miasto")
+                layout = QVBoxLayout()
+                layout.addWidget(QLabel("Wybierz miasto z listy:"))
+                self.combo = QComboBox()
+                self.combo.addItems(miasta)
+                layout.addWidget(self.combo)
+                self.ok_btn = QPushButton("OK")
+                self.ok_btn.clicked.connect(self.accept)
+                layout.addWidget(self.ok_btn)
+                self.setLayout(layout)
+
+            def get_miasto(self):
+                return self.combo.currentText()
+
+        dlg = MiastoDialog(miasto_lista)
+        if dlg.exec_() == QDialog.Accepted:
+            miasto = dlg.get_miasto()
+        else:
+            self.result_text.append("Anulowano przewidywanie ceny.")
+            return
+
+        # --- Przygotowanie danych do predykcji ---
+        import numpy as np
+        import pandas as pd
+
+        feature_dict = {col: [np.nan] for col in self.model_features}
+        if "city" in feature_dict: feature_dict["city"] = [miasto]
+        if "year" in feature_dict: feature_dict["year"] = [rok]
+        if "month" in feature_dict: feature_dict["month"] = [miesiac if miesiac else np.nan]
+        if "squareMeters" in feature_dict: feature_dict["squareMeters"] = [m2]
+        if "buildYear" in feature_dict: feature_dict["buildYear"] = [year_build]
+        if "rooms" in feature_dict: feature_dict["rooms"] = [rooms]
+
+        for col in self.model_features:
+            if col not in feature_dict or pd.isna(feature_dict[col][0]):
+                if col in self.dataset.columns:
+                    col_data = self.dataset[col].dropna()
+                    if col_data.empty:
+                        feature_dict[col] = [np.nan]
+                    elif col_data.dtype.kind in 'biufc':  # liczby
+                        feature_dict[col] = [col_data.median()]
+                    else:  # tekst, bool, kategorie
+                        feature_dict[col] = [col_data.mode().iloc[0]]
+                else:
+                    feature_dict[col] = [np.nan]  # awaryjnie
+
+        dane = pd.DataFrame(feature_dict)
+
+        # (Opcjonalnie) wymuś typy, jeśli masz listy cat_features/num_features z treningu
+
+        from model.preprocess import preprocess_data
+        X, _, _, _, _ = preprocess_data(
+            dane,
+            enc=self.model_enc,
+            scaler=self.model_scaler,
+            fit=False
+        )
+        y_pred_log = self.model.predict(X)
+        cena = np.exp(y_pred_log)[0]
+
+        self.result_text.append(
+            f"\n=== Przewidywana cena mieszkania: {cena:,.0f} PLN ===\n"
+            f"Miasto: {miasto}\nRok: {rok}\nMiesiąc: {miesiac if miesiac else 'dowolny'}\n"
+            f"Metraż: {m2} m²\nRok budowy: {year_build}\nPokoje: {rooms}\n"
+        )
 
     def clearResults(self):
         self.result_text.clear()
