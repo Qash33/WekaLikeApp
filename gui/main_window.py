@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtGui import QFont, QPixmap
 from PyQt5.QtCore import Qt
+from qtrangeslider import QRangeSlider
 from gui.stats_tab import StatsPlotTab
 from gui.widgets import create_button, create_combo_box
 from model.training import TrainModelThread
@@ -76,10 +77,42 @@ class WekaLikeApp(QMainWindow):
         self.month_combo.setEnabled(False)
         ml_layout.addWidget(self.month_combo)
 
-        ml_layout.addWidget(QLabel("Wybierz parametr liczbowy do analizy:"))
-        self.param_combo = QComboBox()
-        self.param_combo.setEnabled(False)
-        ml_layout.addWidget(self.param_combo)
+        slider_layout = QHBoxLayout()
+
+        # --- Powierzchnia (metry kw.) ---
+        slider_layout.addWidget(QLabel("Metraż:"))
+        self.area_slider = QRangeSlider()
+        self.area_slider.setOrientation(Qt.Horizontal)
+        self.area_slider.setEnabled(False)
+        slider_layout.addWidget(self.area_slider)
+        self.area_range_label = QLabel("")
+        slider_layout.addWidget(self.area_range_label)
+
+        # --- Pokoje ---
+        slider_layout.addWidget(QLabel("Pokoje:"))
+        self.rooms_slider = QRangeSlider()
+        self.rooms_slider.setOrientation(Qt.Horizontal)
+        self.rooms_slider.setEnabled(False)
+        slider_layout.addWidget(self.rooms_slider)
+        self.rooms_range_label = QLabel("")
+        slider_layout.addWidget(self.rooms_range_label)
+
+        # --- Rok budowy ---
+        slider_layout.addWidget(QLabel("Rok budowy:"))
+        self.year_slider = QRangeSlider()
+        self.year_slider.setOrientation(Qt.Horizontal)
+        self.year_slider.setEnabled(False)
+        slider_layout.addWidget(self.year_slider)
+        self.year_range_label = QLabel("")
+        slider_layout.addWidget(self.year_range_label)
+
+        # Podłącz zmiany wartości suwaków do aktualizacji etykiet
+        self.area_slider.valueChanged.connect(self.update_slider_labels)
+        self.rooms_slider.valueChanged.connect(self.update_slider_labels)
+        self.year_slider.valueChanged.connect(self.update_slider_labels)
+
+        ml_layout.addLayout(slider_layout)
+
         # --- Koniec nowych selektorów ---
 
         self.generate_plot_button = QPushButton("Generuj wykres i dane")
@@ -175,6 +208,7 @@ class WekaLikeApp(QMainWindow):
             self.dataset.insert(0, 'id', range(1, len(self.dataset) + 1))
             self.result_text.append(f"Loaded dataset: {file_path.split('/')[-1]}")
             self.update_filter_selectors()
+            self.set_slider_ranges_from_dataset()
             self.check_enable_generate_plot()
 
     def update_filter_selectors(self):
@@ -202,21 +236,66 @@ class WekaLikeApp(QMainWindow):
             for val in sorted(self.dataset["month"].dropna().unique()):
                 self.month_combo.addItem(str(val))
 
-        # Parametry (liczbowe) wszystkie numeryczne poza id, price, year, month, city
-        self.param_combo.clear()
-        blacklist = ["id", "city", "year", "month", "price"]
-        self.param_combo.setEnabled(True)
-        numeric_cols = self.dataset.select_dtypes(include='number').columns
-        for col in numeric_cols:
-            if col not in blacklist:
-                self.param_combo.addItem(col)
+    def set_slider_ranges_from_dataset(self):
+        df = self.dataset
+        # Zakres dla metrażu-mapowanie po indeksie na inty!
+        if 'squareMeters' in df.columns:
+            self.area_unique = sorted(set(int(round(v)) for v in df['squareMeters'].dropna()))
+            self.area_slider.setMinimum(0)
+            self.area_slider.setMaximum(len(self.area_unique) - 1)
+            self.area_slider.setValue((0, len(self.area_unique) - 1))
+            self.area_slider.setEnabled(True)
+        # Zakres dla pokoi
+        if 'rooms' in df.columns:
+            min_val, max_val = int(df['rooms'].min()), int(df['rooms'].max())
+            if min_val == max_val:
+                min_val = max_val - 1
+            self.rooms_slider.setMinimum(min_val)
+            self.rooms_slider.setMaximum(max_val)
+            self.rooms_slider.setValue((min_val, max_val))
+            self.rooms_slider.setEnabled(True)
+        # Zakres dla roku budowy-mapowanie po indeksie na inty!
+        if 'buildYear' in df.columns:
+            self.year_unique = sorted(set(int(v) for v in df['buildYear'].dropna()))
+            self.year_slider.setMinimum(0)
+            self.year_slider.setMaximum(len(self.year_unique) - 1)
+            self.year_slider.setValue((0, len(self.year_unique) - 1))
+            self.year_slider.setEnabled(True)
+        else:
+            self.year_slider.setMinimum(0)
+            self.year_slider.setMaximum(99)
+            self.year_slider.setValue((0, 99))
+            self.year_slider.setEnabled(False)
+        self.update_slider_labels()
+
+    def update_slider_labels(self):
+        # Metraż
+        if hasattr(self, "area_unique") and self.area_unique:
+            area_min_idx, area_max_idx = self.area_slider.value()
+            a_min = self.area_unique[area_min_idx]
+            a_max = self.area_unique[area_max_idx]
+            self.area_range_label.setText(f"{a_min} - {a_max} m²")
+        else:
+            area_min, area_max = self.area_slider.value()
+            self.area_range_label.setText(f"{area_min} - {area_max} m²")
+        # Pokoje
+        rooms_min, rooms_max = self.rooms_slider.value()
+        self.rooms_range_label.setText(f"{rooms_min} - {rooms_max} pokoi")
+        # Rok budowy
+        if hasattr(self, "year_unique") and self.year_unique:
+            year_min_idx, year_max_idx = self.year_slider.value()
+            y_min = self.year_unique[year_min_idx]
+            y_max = self.year_unique[year_max_idx]
+            self.year_range_label.setText(f"{y_min} - {y_max} r.")
+        else:
+            year_min, year_max = self.year_slider.value()
+            self.year_range_label.setText(f"{year_min} - {year_max} r.")
 
     def trainModel(self):
         if self.dataset is None or not isinstance(self.dataset, pd.DataFrame) or self.dataset.empty:
             self.result_text.append("Brak zbioru danych! Proszę załadować dane przed rozpoczęciem treningu.\n")
             return
         try:
-            # <-- Kluczowa zmiana: zapisz encoder i scaler!
             from model.preprocess import preprocess_data
             X, y, feature_cols, enc, scaler = preprocess_data(self.dataset, fit=True)
             self.model_features = feature_cols
@@ -290,6 +369,30 @@ class WekaLikeApp(QMainWindow):
             if "month" in df.columns:
                 df = df[df["month"].astype(str) == month]
 
+        # Filtracja po suwakach
+        # Metraż
+        if hasattr(self, "area_unique") and self.area_unique:
+            area_min_idx, area_max_idx = self.area_slider.value()
+            area_min = self.area_unique[area_min_idx]
+            area_max = self.area_unique[area_max_idx]
+            df = df[(df['squareMeters'].round().astype(int) >= area_min) & (
+                        df['squareMeters'].round().astype(int) <= area_max)]
+        else:
+            area_min, area_max = self.area_slider.value()
+            df = df[(df['squareMeters'] >= area_min) & (df['squareMeters'] <= area_max)]
+            # Pokoje
+        rooms_min, rooms_max = self.rooms_slider.value()
+        if 'rooms' in df.columns:
+            df = df[(df['rooms'] >= rooms_min) & (df['rooms'] <= rooms_max)]
+        # Rok budowy
+        if hasattr(self, "year_unique") and self.year_unique and 'buildYear' in df.columns:
+            year_min_idx, year_max_idx = self.year_slider.value()
+            y_min = self.year_unique[year_min_idx]
+            y_max = self.year_unique[year_max_idx]
+            df = df[df['buildYear'].notna()]
+            df = df[(df['buildYear'].astype(int) >= y_min) & (df['buildYear'].astype(int) <= y_max)]
+        # --- Koniec filtracji po suwakach ---
+
         df = df[df['price'].notna()]
         if df.empty:
             QMessageBox.warning(self, "Brak danych", "Brak rekordów z niepustą ceną po filtracji!")
@@ -359,7 +462,6 @@ class WekaLikeApp(QMainWindow):
             y_real = np.exp(y_log)
             y_pred_real = np.exp(y_pred_log)
 
-            # Statystyki tekstowe
             from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
             mae = mean_absolute_error(y_real, y_pred_real)
             rmse = np.sqrt(mean_squared_error(y_real, y_pred_real))
@@ -387,8 +489,13 @@ class WekaLikeApp(QMainWindow):
         self.city_combo.clear()
         self.year_combo.clear()
         self.month_combo.clear()
-        self.param_combo.clear()
         self.generate_plot_button.setEnabled(False)
+        self.area_slider.setEnabled(False)
+        self.rooms_slider.setEnabled(False)
+        self.year_slider.setEnabled(False)
+        self.area_range_label.setText("")
+        self.rooms_range_label.setText("")
+        self.year_range_label.setText("")
 
     def check_enable_generate_plot(self):
         if self.dataset is not None and not self.dataset.empty:
@@ -396,6 +503,11 @@ class WekaLikeApp(QMainWindow):
             self.city_combo.setEnabled(True)
             self.year_combo.setEnabled(True)
             self.month_combo.setEnabled(True)
-            self.param_combo.setEnabled(True)
+            self.area_slider.setEnabled(True)
+            self.rooms_slider.setEnabled(True)
+            self.year_slider.setEnabled(True)
         else:
             self.generate_plot_button.setEnabled(False)
+            self.area_slider.setEnabled(False)
+            self.rooms_slider.setEnabled(False)
+            self.year_slider.setEnabled(False)
