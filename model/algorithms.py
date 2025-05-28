@@ -12,8 +12,6 @@ ALGORITHMS = {
         n_jobs=15,
         random_state=42
     ),
-    "SVM": LinearSVC(max_iter=1000, dual=False),
-    "Decision Tree": DecisionTreeClassifier(max_depth=5),
      "Neural Network": MLPRegressor(
          hidden_layer_sizes=(64, 32),  # liczba warstw/neuronów (możesz zmieniać)
          activation='relu',  # relu najlepszy do regresji
@@ -24,14 +22,6 @@ ALGORITHMS = {
          n_iter_no_change=15,  # ile epok bez poprawy
          random_state=42,
          verbose=True
-    ),
-    "LightGBM": lgb.LGBMRegressor(
-        n_estimators=200,
-        max_depth=20,
-        n_jobs=10,
-        random_state=42
     )
-
-
 }
 
