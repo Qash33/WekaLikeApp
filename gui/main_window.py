@@ -15,6 +15,7 @@ from model.model_manager import save_model
 from utils1.plot_utils import plot_results
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split, cross_val_score, KFold
+from scipy.stats import gaussian_kde
 import pandas as pd
 import joblib
 import os
@@ -131,7 +132,7 @@ class WekaLikeApp(QMainWindow):
         self.result_area.setWidget(self.result_text)
         ml_layout.addWidget(self.result_area)
 
-        self.chart_combo = create_combo_box(["Scatter Plot", "Histogram", "Line Chart"])
+        self.chart_combo = create_combo_box(["Scatter Plot", "Fill Between", "Line Chart"])
         self.chart_combo.currentIndexChanged.connect(self.generate_filtered_plot)
         ml_layout.addWidget(self.chart_combo)
 
@@ -169,7 +170,7 @@ class WekaLikeApp(QMainWindow):
 
         viz_menu = menubar.addMenu("Visualization")
         viz_menu.addAction("Scatter Plot", lambda: self.chart_combo.setCurrentText("Scatter Plot"))
-        viz_menu.addAction("Histogram", lambda: self.chart_combo.setCurrentText("Histogram"))
+        viz_menu.addAction("Fill Between", lambda: self.chart_combo.setCurrentText("Fill Between"))
         viz_menu.addAction("Line Chart", lambda: self.chart_combo.setCurrentText("Line Chart"))
 
         help_menu = menubar.addMenu("Help")
@@ -425,13 +426,27 @@ class WekaLikeApp(QMainWindow):
                 plt.ylabel('Cena przewidywana [PLN]')
                 plt.title(f'Predykcja ceny - Scatter Plot\n({city}, {year}, {month})')
                 plt.legend()
-            elif chart_type == "Histogram":
-                plt.hist(y_real, bins=20, alpha=0.5, label='Cena rzeczywista')
-                plt.hist(y_pred_real, bins=20, alpha=0.5, label='Predykcja')
+            elif chart_type == "Fill Between":
+
+                x = np.linspace(min(y_real.min(), y_pred_real.min()), max(y_real.max(), y_pred_real.max()), 1000)
+
+                # Gęstość KDE
+                kde_real = gaussian_kde(y_real)
+                kde_pred = gaussian_kde(y_pred_real)
+                y_real_kde = kde_real(x)
+                y_pred_kde = kde_pred(x)
+
+                plt.figure(figsize=(10, 6))
+                plt.fill_between(x, y_real_kde, color="blue", alpha=0.4, label="Cena rzeczywista")
+                plt.fill_between(x, y_pred_kde, color="red", alpha=0.4, label="Predykcja")
+                plt.plot(x, y_real_kde, color="blue")
+                plt.plot(x, y_pred_kde, color="red")
                 plt.xlabel('Cena [PLN]')
-                plt.ylabel('Liczba')
-                plt.title(f'Predykcja ceny - Histogram\n({city}, {year}, {month})')
+                plt.ylabel('Gęstość (Ilość wystąpień)')
+                plt.title('Porównanie rozkładów cen (fill_between)')
                 plt.legend()
+                plt.grid(True, axis='y', linestyle='--', alpha=0.6)
+                plt.tight_layout()
             elif chart_type == "Line Chart":
                 plt.plot(range(len(y_real)), y_real, label='Cena rzeczywista', marker='o')
                 plt.plot(range(len(y_pred_real)), y_pred_real, label='Predykcja', marker='x')
@@ -462,10 +477,11 @@ class WekaLikeApp(QMainWindow):
             y_real = np.exp(y_log)
             y_pred_real = np.exp(y_pred_log)
 
-            from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+            from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, mean_absolute_percentage_error
             mae = mean_absolute_error(y_real, y_pred_real)
             rmse = np.sqrt(mean_squared_error(y_real, y_pred_real))
             r2 = r2_score(y_real, y_pred_real)
+            mape = mean_absolute_percentage_error(y_real, y_pred_real) * 100
             desc = pd.Series(y_real).describe()
             desc = desc.apply(lambda x: f"{x:,.0f}").to_string()
             summary = (
@@ -473,6 +489,7 @@ class WekaLikeApp(QMainWindow):
                 f"Liczba rekordów: {len(y_real)}\n"
                 f"MAE: {mae:,.2f} PLN\n"
                 f"RMSE: {rmse:,.2f} PLN\n"
+                f"MAPE: {mape:,.2f} %\n"
                 f"R²: {r2:.2f}\n\n"
                 f"Opis cen rzeczywistych:\n{desc}"
             )
